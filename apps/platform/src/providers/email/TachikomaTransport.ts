@@ -1,24 +1,12 @@
 import nodemailer from 'nodemailer'
 
 export class TachikomaTransport implements nodemailer.Transport {
-    name: string
-    version: string
+    name = 'tachikoma'
+    version = '1.0.0'
 
-    constructor() {
-        this.name = 'TachikomaTransport'
-        this.version = '6'
-    }
+    constructor(private baseUrl: string, private token: string) {}
 
-    send(mail: any, callback: (err: (Error | null), info: any) => void) {
-
-        const transporter = mail.mailer.transporter
-
-        if (!transporter || transporter.name !== 'TachikomaTransport') {
-            callback(new Error('Invalid transporter'), null)
-            return
-        }
-
-        const url = 'http://localhost:3100/tachikoma/sendEmail'
+    send(mail: any, callback: (err: Error | null, info: any) => void) {
 
         const payload = {
             subject: mail.data.subject,
@@ -30,8 +18,12 @@ export class TachikomaTransport implements nodemailer.Transport {
             headers: mail.data.headers,
         }
 
-        fetch(url, {
+        fetch(`${this.baseUrl}/tachikoma/sendEmail`, {
             method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Bridge-Token': this.token,
+            },
             body: JSON.stringify(payload),
         })
             .then(response => {
@@ -39,10 +31,6 @@ export class TachikomaTransport implements nodemailer.Transport {
                     throw new Error(`HTTP error! status: ${response.status}`)
                 }
                 callback(null, { ...response, messageId: response })
-
-            })
-            .then(data => {
-                callback(null, data)
             })
             .catch(error => {
                 callback(error, null)

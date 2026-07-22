@@ -29,6 +29,9 @@ export default class EmailChannel {
             headers: {
                 'X-Campaign-Id': encodeHashid(variables.context.campaign_id),
                 'X-Subscription-Id': encodeHashid(variables.context.subscription_id),
+                'X-External-Id': variables.user.external_id ?? '',
+                'X-Reference-Id': variables.context.reference_id ?? '',
+                'X-Subscription-Id-Raw': String(variables.context.subscription_id),
             },
             list: {
                 unsubscribe: unsubscribeEmailLink({

@@ -10,12 +10,19 @@ import App from '../../app'
 import Router = require('@koa/router');
 import { TachikomaTransport } from './TachikomaTransport'
 
+interface TachikomaDataParams {
+    bridgeUrl: string
+    bridgeToken: string
+}
+
 type TachikomaEmailProviderParams = Pick<TachikomaEmailProvider, keyof ExternalProviderParams>
 
 export default class TachikomaEmailProvider extends EmailProvider {
     host!: string
     port!: number
     secure!: boolean
+    bridgeUrl!: string
+    bridgeToken!: string
 
     static namespace = 'tachikoma'
     static meta = {
@@ -26,10 +33,13 @@ export default class TachikomaEmailProvider extends EmailProvider {
         },
     }
 
-    static schema = ProviderSchema<TachikomaEmailProviderParams, Record<string, never>>('tachikomaProviderParams', {
+    static schema = ProviderSchema<TachikomaEmailProviderParams, TachikomaDataParams>('tachikomaProviderParams', {
         type: 'object',
-        required: [],
-        properties: {},
+        required: ['bridgeUrl', 'bridgeToken'],
+        properties: {
+            bridgeUrl: { type: 'string' },
+            bridgeToken: { type: 'string' },
+        },
         additionalProperties: false,
     })
 
@@ -42,7 +52,7 @@ export default class TachikomaEmailProvider extends EmailProvider {
 
     boot() {
         this.transport = nodemailer.createTransport(
-            new TachikomaTransport(),
+            new TachikomaTransport(this.bridgeUrl, this.bridgeToken),
         )
     }
 
