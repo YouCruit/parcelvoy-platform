@@ -240,6 +240,9 @@ const api = {
         duplicate: async (projectId: number | string, listId: number | string) => await client
             .post<List>(`${projectUrl(projectId)}/lists/${listId}/duplicate`)
             .then(r => r.data),
+        recount: async (projectId: number | string, listId: number | string) => await client
+            .post<List>(`${projectUrl(projectId)}/lists/${listId}/recount`)
+            .then(r => r.data),
     },
 
     projectAdmins: {
@@ -280,6 +283,9 @@ const api = {
             .then(r => r.data),
         update: async (projectId: number | string, entityId: number | string, { group, type, ...provider }: ProviderUpdateParams) => await client
             .patch<Provider>(`${projectUrl(projectId)}/providers/${group}/${type}/${entityId}`, provider)
+            .then(r => r.data),
+        delete: async (projectId: number | string, id: number) => await client
+            .delete<number>(`${projectUrl(projectId)}/providers/${id}`)
             .then(r => r.data),
     },
 

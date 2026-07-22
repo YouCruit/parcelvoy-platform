@@ -5,14 +5,18 @@ import ListStatsJob from '../lists/ListStatsJob'
 import { RequestError } from '../core/errors'
 import App from '../app'
 import { Chunker } from '../utilities'
+import { getList } from '../lists/ListService'
 
 export interface UserImport {
     project_id: number
     stream: FileStream
-    list_id?: number
+    list_id: number
 }
 
 export const importUsers = async ({ project_id, stream, list_id }: UserImport) => {
+
+    const list = await getList(list_id, project_id)
+    if (!list) return
 
     const options: Options = {
         columns: true,
@@ -41,7 +45,10 @@ export const importUsers = async ({ project_id, stream, list_id }: UserImport) =
                 created_at,
             },
             options: {
-                join_list_id: list_id,
+                join_list: {
+                    id: list.id,
+                    version: list.version,
+                },
             },
         }))
     }
@@ -62,11 +69,21 @@ const cleanRow = (row: Record<string, any>): Record<string, any> => {
 
 const cleanCell = (value: any, key: string) => {
     if (typeof value === 'string') {
+
+        // Parse booleans stored in a string
         if (value.toLowerCase() === 'false') return false
         if (value.toLowerCase() === 'true') return true
+
+        // Parse undefined and null stored in a string
         if (value === 'NULL' || value == null || value === 'undefined' || value === '') return undefined
+
+        // Parse dates stored in a string
         if (key.includes('_at')) return new Date(value)
-        if (key === 'phone' && !value.includes('+')) return `+${value}`
+    }
+
+    // Handle missformatted phone numbers
+    if (key === 'phone') {
+        return `+${String(value).replace(/\D/g, '')}`
     }
     return value
 }

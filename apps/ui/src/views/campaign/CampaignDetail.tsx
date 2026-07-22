@@ -57,16 +57,20 @@ export default function CampaignDetail() {
     const [project] = useContext(ProjectContext)
     const { t } = useTranslation()
     const [campaign, setCampaign] = useContext(CampaignContext)
-    const { name, templates, state } = campaign
+    const { name, templates, state, send_at, progress } = campaign
     const [locale, setLocale] = useState<LocaleSelection>(localeState(templates ?? []))
     useEffect(() => {
         setLocale(localeState(templates ?? []))
     }, [campaign.id])
     const [isLaunchOpen, setIsLaunchOpen] = useState(false)
+    const [isLoading, setIsLoading] = useState(false)
 
     const handleAbort = async () => {
+        setIsLoading(true)
         const value = await api.campaigns.update(project.id, campaign.id, { state: 'aborted' })
+        console.log('finished', value)
         setCampaign(value)
+        setIsLoading(false)
     }
 
     const tabs = [
@@ -105,7 +109,20 @@ export default function CampaignDetail() {
                 onClick={() => setIsLaunchOpen(true)}
             >{t('restart_campaign')}</Button>
         ),
-        pending: <></>,
+        aborting: send_at
+            ? (
+                <Button
+                    icon={<SendIcon />}
+                    isLoading={true}
+                >{t('rescheduling')}</Button>
+            )
+            : (
+                <Button
+                    icon={<ForbiddenIcon />}
+                    isLoading={true}
+                >{t('abort_campaign')}</Button>
+            ),
+        loading: <></>,
         scheduled: (
             <>
                 <Button
@@ -114,6 +131,7 @@ export default function CampaignDetail() {
                 >{t('change_schedule')}</Button>
                 <Button
                     icon={<ForbiddenIcon />}
+                    isLoading={isLoading}
                     onClick={async () => await handleAbort()}
                 >{t('abort_campaign')}</Button>
             </>
@@ -121,6 +139,7 @@ export default function CampaignDetail() {
         running: (
             <Button
                 icon={<ForbiddenIcon />}
+                isLoading={isLoading}
                 onClick={async () => await handleAbort()}
             >{t('abort_campaign')}</Button>
         ),
@@ -130,7 +149,11 @@ export default function CampaignDetail() {
     return (
         <PageContent
             title={name}
-            desc={state !== 'draft' && <CampaignTag state={campaign.state} />}
+            desc={state !== 'draft' && <CampaignTag
+                state={state}
+                progress={progress}
+                send_at={send_at}
+            />}
             actions={campaign.type !== 'trigger' && action[state]}
             fullscreen={true}>
             <NavigationTabs tabs={tabs} />
