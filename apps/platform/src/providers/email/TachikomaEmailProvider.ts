@@ -24,9 +24,9 @@ export default class TachikomaEmailProvider extends EmailProvider {
     bridgeUrl!: string
     bridgeToken!: string
 
-    static namespace = 'tachikoma'
+    static namespace = 'tachikoma'   // internal id — coupled to the /tachikoma webhook path, the bridge's parcelvoyUri, and existing provider rows; do NOT rename
     static meta = {
-        name: 'Tachikoma',
+        name: 'Lanefinder Email Bridge',
         icon: 'https://parcelvoy.com/providers/webhook.svg',
         paths: {
             'Webhook URL': `/${this.namespace}`,
