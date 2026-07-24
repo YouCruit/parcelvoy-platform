@@ -16,9 +16,8 @@ jobs:
       uses: actions/setup-node@v1
       with:
         node-version: ${{ matrix.node-version }}
-    - name: Node Install
-      run: |
-        npm install
+    - name: Install Dependencies
+      run: npm ci --ignore-scripts
     - name: Lint
       run: |
         npm run lint
@@ -61,7 +60,14 @@ jobs:
           ${{ runner.os }}-node-
 
     - name: Install Dependencies
-      run: npm install && npm install --save-dev
+      # `npm ci` is lockfile-faithful/reproducible; `--ignore-scripts` blocks
+      # every transitive package's install/postinstall from auto-executing
+      # (supply-chain hardening). farmhash is a hard native runtime dep
+      # (firebase-admin -> node-pushnotifications) that the jest suite loads via
+      # the push providers, so we explicitly rebuild only that trusted package.
+      run: |
+        npm ci --ignore-scripts
+        npm rebuild farmhash
 
     - name: 'Run Jest Tests'
       run: npm run test -- --scope=@parcelvoy/platform
@@ -90,9 +96,8 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-    - name: Node Install
-      run: |
-        npm install
+    - name: Install Dependencies
+      run: npm ci --ignore-scripts
     - name: Build
       run: |
         npm run build

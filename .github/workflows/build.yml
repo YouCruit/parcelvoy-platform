@@ -44,7 +44,11 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Install Dependencies
-        run: npm install
+        # `--ignore-scripts` prevents transitive install scripts from running in
+        # the release job (which holds a registry-write token). The image itself
+        # is built by the Dockerfile's own install, so no native rebuild is needed
+        # on the host here — this step only provisions lerna to drive the build.
+        run: npm ci --ignore-scripts
       
       - name: Build the Docker Image
         run: |
