@@ -2,12 +2,15 @@ import Router from '@koa/router'
 import EventPostJob from './EventPostJob'
 import { JSONSchemaType, validate } from '../core/validate'
 import { ClientIdentifyParams, ClientIdentityKeys, ClientPostEventsRequest } from './Client'
-import { ProjectState } from '../auth/AuthMiddleware'
+import { ProjectState, scopeMiddleware } from '../auth/AuthMiddleware'
 import { projectMiddleware } from '../projects/ProjectController'
 import { DeviceParams } from '../users/User'
 import UserPatchJob from '../users/UserPatchJob'
 import UserDeviceJob from '../users/UserDeviceJob'
 import UserAliasJob from '../users/UserAliasJob'
+import { getUserFromClientId } from '../users/UserRepository'
+import { toggleSubscription } from '../subscriptions/SubscriptionService'
+import { SubscriptionState } from '../subscriptions/Subscription'
 
 const router = new Router<ProjectState>()
 router.use(projectMiddleware)
@@ -243,6 +246,47 @@ router.post('/events', async ctx => {
         }).queue()
     }
 
+    ctx.status = 204
+    ctx.body = ''
+})
+
+/**
+ * Update Subscriptions
+ * Used by the email-bridge to sync a recipient's unsubscribe / resubscribe
+ * (preferences) choice back into Parcelvoy, keyed by external id. Mirrors the
+ * admin `PATCH /users/:userId/subscriptions` but resolves the user by external
+ * id within the key's project. Requires a SECRET-scoped key — subscription
+ * changes must not be driveable by a public, client-embeddable key.
+ */
+interface ClientSubscriptionUpdate {
+    subscription_id: number
+    state: SubscriptionState
+}
+const subscriptionUpdatesRequest = {
+    $id: 'clientSubscriptionUpdates',
+    type: 'array',
+    items: {
+        type: 'object',
+        required: ['subscription_id', 'state'],
+        properties: {
+            subscription_id: { type: 'number' },
+            state: { type: 'number', enum: [0, 1, 2] },
+        },
+        additionalProperties: false,
+    },
+    minItems: 1,
+} as any
+router.patch('/users/:externalId/subscriptions', scopeMiddleware('secret'), async ctx => {
+    const updates = validate(subscriptionUpdatesRequest, ctx.request.body) as ClientSubscriptionUpdate[]
+    const user = await getUserFromClientId(ctx.state.project.id, { external_id: ctx.params.externalId })
+    if (!user) {
+        ctx.status = 404
+        ctx.body = ''
+        return
+    }
+    for (const update of updates) {
+        await toggleSubscription(user.id, update.subscription_id, update.state)
+    }
     ctx.status = 204
     ctx.body = ''
 })
