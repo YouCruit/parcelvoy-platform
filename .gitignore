@@ -107,3 +107,6 @@ dist
 
 # Jetbrains IntelliJ
 .idea/
+
+# Claude Code
+.claude-account
