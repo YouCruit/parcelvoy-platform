@@ -17,6 +17,28 @@ export default class EmailChannel {
         }
     }
 
+    /**
+     * Build the internal correlation headers stamped onto every outbound email.
+     *
+     * These are consumed by the email-bridge, which joins delivery/engagement
+     * events back to the campaign and subscriber that produced them. The bridge
+     * strips every one of these before the message reaches the recipient, so
+     * they must never carry anything we would not want stripped — if a header
+     * added here is not also in the bridge's strip list it ships to recipients.
+     *
+     * Extracted from send() purely so the header contract is testable without a
+     * provider, a compiled template, or a booted App.
+     */
+    buildHeaders(variables: Variables): Record<string, string> {
+        return {
+            'X-Campaign-Id': encodeHashid(variables.context.campaign_id),
+            'X-Subscription-Id': encodeHashid(variables.context.subscription_id),
+            'X-External-Id': variables.user.external_id ?? '',
+            'X-Reference-Id': variables.context.reference_id ?? '',
+            'X-Subscription-Id-Raw': String(variables.context.subscription_id),
+        }
+    }
+
     async send(template: EmailTemplate, variables: Variables) {
         if (!variables.user.email) throw new Error('Unable to send a message to a user with no email.')
 
@@ -26,13 +48,7 @@ export default class EmailChannel {
         const email: Email = {
             ...compiled,
             to: variables.user.email,
-            headers: {
-                'X-Campaign-Id': encodeHashid(variables.context.campaign_id),
-                'X-Subscription-Id': encodeHashid(variables.context.subscription_id),
-                'X-External-Id': variables.user.external_id ?? '',
-                'X-Reference-Id': variables.context.reference_id ?? '',
-                'X-Subscription-Id-Raw': String(variables.context.subscription_id),
-            },
+            headers: this.buildHeaders(variables),
             list: {
                 unsubscribe: unsubscribeEmailLink({
                     userId: variables.user.id,
