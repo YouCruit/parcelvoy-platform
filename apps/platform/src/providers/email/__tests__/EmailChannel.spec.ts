@@ -85,4 +85,61 @@ describe('EmailChannel', () => {
             expect(headers['X-External-Id']).toEqual('')
         })
     })
+
+    describe('buildHeaders carrier identity', () => {
+
+        // The bridge resolves, or creates, the Close CRM lead from these two.
+        // caretaker syncs dot_number as an integer, so the header must be
+        // stringified — the bridge validates it as digits-only and drops
+        // anything else, treating the send as unattributable.
+        test('stamps the carrier DOT and company name when the user has them', async () => {
+            const variables = await setup({ dot_number: 1234567, company_name: 'ACME Trucking LLC' })
+            const channel = new EmailChannel(new LoggerEmailProvider())
+
+            const headers = channel.buildHeaders(variables)
+
+            expect(headers['X-Dot-Number']).toEqual('1234567')
+            expect(headers['X-Company-Name']).toEqual('ACME Trucking LLC')
+        })
+
+        // Most Parcelvoy users are drivers, not carriers, and carry neither
+        // field. Omitting the headers rather than sending them blank keeps the
+        // wire clean and matches how the bridge reads a missing DOT anyway.
+        test('omits both headers when the user has no carrier data', async () => {
+            const variables = await setup()
+            const channel = new EmailChannel(new LoggerEmailProvider())
+
+            const headers = channel.buildHeaders(variables)
+
+            expect(headers).not.toHaveProperty('X-Dot-Number')
+            expect(headers).not.toHaveProperty('X-Company-Name')
+        })
+
+        // The case a naive `'dot_number' in data` check gets wrong: the keys are
+        // present but empty. An empty header is worse than no header — the
+        // bridge would still see the field and log an unusable value rather
+        // than cleanly recording the send as unmapped.
+        test('omits both headers when the carrier fields are empty strings', async () => {
+            const variables = await setup({ dot_number: '', company_name: '' })
+            const channel = new EmailChannel(new LoggerEmailProvider())
+
+            const headers = channel.buildHeaders(variables)
+
+            expect(headers).not.toHaveProperty('X-Dot-Number')
+            expect(headers).not.toHaveProperty('X-Company-Name')
+        })
+
+        // Each field is independent — a carrier known by DOT but with no name
+        // on file must still get its DOT stamped, or the bridge cannot attach
+        // the send to the lead it already has.
+        test('stamps each carrier field independently of the other', async () => {
+            const variables = await setup({ dot_number: 7654321 })
+            const channel = new EmailChannel(new LoggerEmailProvider())
+
+            const headers = channel.buildHeaders(variables)
+
+            expect(headers['X-Dot-Number']).toEqual('7654321')
+            expect(headers).not.toHaveProperty('X-Company-Name')
+        })
+    })
 })
