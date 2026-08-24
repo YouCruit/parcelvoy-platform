@@ -77,7 +77,17 @@ export default class TachikomaEmailProvider extends EmailProvider {
                 ? 'unsubscribe'
                 : undefined
 
-            await trackMessageEvent({ user, campaign }, event, action)
+            // X-Reference-Id is stamped on every send (EmailChannel.ts) precisely so
+            // an interaction can be matched back to the exact campaign_sends row —
+            // campaign_id + user_id alone is ambiguous across resends. Sent raw, not
+            // hashid-encoded (unlike X-Campaign-Id), so no decode here. `|| undefined`
+            // rather than a bare pass-through: an empty header (sends with no
+            // reference_id) must fall through to trackMessageEvent's own '0' default,
+            // not be treated as a real (empty-string) reference_id that would also
+            // fail to match.
+            const referenceId = headers['X-Reference-Id'] || undefined
+
+            await trackMessageEvent({ user, campaign, referenceId }, event, action)
         })
 
         return { admin, public: router }
