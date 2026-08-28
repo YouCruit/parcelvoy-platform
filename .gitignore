@@ -1,3 +1,6 @@
+# Git worktrees (isolated SDD/plan execution workspaces)
+.worktrees
+
 # Logs
 logs
 *.log
