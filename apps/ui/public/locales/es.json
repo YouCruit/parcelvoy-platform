@@ -302,6 +302,8 @@
     "static": "Estático",
     "status": "Estado",
     "step_date": "Fecha del Paso",
+    "stop_journey": "Detener Recorrido",
+    "stop_journey_confirmation": "¿Estás seguro de que deseas detener este recorrido para este usuario? No recibirá ningún paso adicional de este recorrido.",
     "subject": "Sujeto",
     "submit": "Entregar",
     "subscribed": "Suscrito",

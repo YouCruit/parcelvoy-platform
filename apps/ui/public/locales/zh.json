@@ -285,6 +285,8 @@
   "static": "静态",
   "status": "状态",
   "step_date": "步骤日期",
+  "stop_journey": "停止旅程",
+  "stop_journey_confirmation": "您确定要为此用户停止此旅程吗？他们将不会收到此旅程的任何后续步骤。",
   "subject": "主题",
   "submit": "提交",
   "subscribed": "已订阅",

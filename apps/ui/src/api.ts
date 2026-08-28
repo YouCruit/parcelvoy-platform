@@ -197,6 +197,9 @@ const api = {
                 .get<JourneyEntranceDetail>(`${projectUrl(projectId)}/journeys/entrances/${entranceId}`)
                 .then(r => r.data),
         },
+        exit: async (projectId: number | string, journeyId: number | string, userId: number | string) => await client
+            .delete<number>(`${projectUrl(projectId)}/journeys/${journeyId}/users/${userId}`)
+            .then(r => r.data),
     },
 
     templates: {
