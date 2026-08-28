@@ -2,7 +2,8 @@ import { useCallback, useContext } from 'react'
 import { ProjectContext, UserContext } from '../../contexts'
 import { SearchTable, useSearchTableQueryState } from '../../ui/SearchTable'
 import api from '../../api'
-import { Tag } from '../../ui'
+import { Button, Tag } from '../../ui'
+import { ForbiddenIcon } from '../../ui/icons'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { PreferencesContext } from '../../ui/PreferencesContext'
@@ -21,6 +22,14 @@ export default function UserDetailJourneys() {
 
     const [preferences] = useContext(PreferencesContext)
     const state = useSearchTableQueryState(useCallback(async params => await api.users.journeys.search(projectId, userId, params), [projectId, userId]))
+
+    const stopJourney = async (event: React.MouseEvent<HTMLButtonElement, MouseEvent>, journeyId: number) => {
+        event.stopPropagation()
+        if (confirm(t('stop_journey_confirmation'))) {
+            await api.journeys.exit(projectId, journeyId, userId)
+            await state.reload()
+        }
+    }
 
     return (
         <SearchTable
@@ -42,6 +51,17 @@ export default function UserDetailJourneys() {
                     cell: ({ item }) => item.ended_at
                         ? formatDate(preferences, item.ended_at, 'Ppp')
                         : <Tag variant="info">{t('running')}</Tag>,
+                },
+                {
+                    key: 'actions',
+                    cell: ({ item }) => !item.ended_at && (
+                        <Button
+                            icon={<ForbiddenIcon />}
+                            size="small"
+                            variant="destructive"
+                            onClickCapture={async (event) => await stopJourney(event, item.journey!.id)}
+                        >{t('stop_journey')}</Button>
+                    ),
                 },
             ]}
             onSelectRow={e => navigate(`../../entrances/${e.entrance_id}`)}
