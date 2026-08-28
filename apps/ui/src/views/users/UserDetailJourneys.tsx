@@ -53,7 +53,8 @@ export default function UserDetailJourneys() {
                         : <Tag variant="info">{t('running')}</Tag>,
                 },
                 {
-                    key: 'actions',
+                    key: 'options',
+                    title: t('options'),
                     cell: ({ item }) => !item.ended_at && (
                         <Button
                             icon={<ForbiddenIcon />}
