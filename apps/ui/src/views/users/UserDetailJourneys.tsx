@@ -2,11 +2,13 @@ import { useCallback, useContext } from 'react'
 import { ProjectContext, UserContext } from '../../contexts'
 import { SearchTable, useSearchTableQueryState } from '../../ui/SearchTable'
 import api from '../../api'
-import { Tag } from '../../ui'
+import { Button, Tag } from '../../ui'
+import { ForbiddenIcon } from '../../ui/icons'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { PreferencesContext } from '../../ui/PreferencesContext'
-import { formatDate } from '../../utils'
+import { checkProjectRole, formatDate } from '../../utils'
+import { toast } from 'react-hot-toast/headless'
 
 export default function UserDetailJourneys() {
 
@@ -21,6 +23,20 @@ export default function UserDetailJourneys() {
 
     const [preferences] = useContext(PreferencesContext)
     const state = useSearchTableQueryState(useCallback(async params => await api.users.journeys.search(projectId, userId, params), [projectId, userId]))
+
+    const canStopJourneys = checkProjectRole('editor', project.role)
+
+    const stopJourney = async (event: React.MouseEvent<HTMLButtonElement, MouseEvent>, journeyId: number) => {
+        event.stopPropagation()
+        if (confirm(t('stop_journey_confirmation'))) {
+            try {
+                await api.journeys.exit(projectId, journeyId, userId)
+                await state.reload()
+            } catch (error: any) {
+                toast.error(t('stop_journey_error', { error: error?.response?.data?.error ?? error?.message ?? error }))
+            }
+        }
+    }
 
     return (
         <SearchTable
@@ -42,6 +58,20 @@ export default function UserDetailJourneys() {
                     cell: ({ item }) => item.ended_at
                         ? formatDate(preferences, item.ended_at, 'Ppp')
                         : <Tag variant="info">{t('running')}</Tag>,
+                },
+                {
+                    key: 'options',
+                    title: t('options'),
+                    cell: ({ item }) => (!item.ended_at && canStopJourneys)
+                        ? (
+                            <Button
+                                icon={<ForbiddenIcon />}
+                                size="small"
+                                variant="destructive"
+                                onClickCapture={async (event) => await stopJourney(event, item.journey!.id)}
+                            >{t('stop_journey')}</Button>
+                        )
+                        : undefined,
                 },
             ]}
             onSelectRow={e => navigate(`../../entrances/${e.entrance_id}`)}
