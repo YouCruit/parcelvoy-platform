@@ -198,7 +198,7 @@ const api = {
                 .then(r => r.data),
         },
         exit: async (projectId: number | string, journeyId: number | string, userId: number | string) => await client
-            .delete<number>(`${projectUrl(projectId)}/journeys/${journeyId}/users/${userId}`)
+            .delete<{ exits: number }>(`${projectUrl(projectId)}/journeys/${journeyId}/users/${userId}`)
             .then(r => r.data),
     },
 
