@@ -33,7 +33,7 @@ export default function UserDetailJourneys() {
                 await api.journeys.exit(projectId, journeyId, userId)
                 await state.reload()
             } catch (error: any) {
-                toast.error(t('stop_journey_error', { error: error?.message ?? error }))
+                toast.error(t('stop_journey_error', { error: error?.response?.data?.error ?? error?.message ?? error }))
             }
         }
     }
