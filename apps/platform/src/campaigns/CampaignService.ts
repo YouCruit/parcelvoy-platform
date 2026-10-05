@@ -199,9 +199,10 @@ interface SendCampaign {
     exists?: boolean
     reference_type?: CampaignSendReferenceType
     reference_id?: string
+    idempotent?: boolean // insert with ON CONFLICT IGNORE (caller-keyed triggers)
 }
 
-export const triggerCampaignSend = async ({ campaign, user, event, exists, reference_type, reference_id }: SendCampaign) => {
+export const triggerCampaignSend = async ({ campaign, user, event, exists, reference_type, reference_id, idempotent }: SendCampaign) => {
     const userId = user instanceof User ? user.id : user
     const eventId = event instanceof UserEvent ? event?.id : event
 
@@ -210,13 +211,21 @@ export const triggerCampaignSend = async ({ campaign, user, event, exists, refer
 
     const reference = { reference_id, reference_type }
     if (!exists) {
-        await CampaignSend.insert({
+        const send = {
             campaign_id: campaign.id,
             user_id: userId,
-            state: 'pending',
+            state: 'pending' as const,
             send_at: new Date(),
             ...reference,
-        })
+        }
+        if (idempotent) {
+            await CampaignSend.query()
+                .insert(send)
+                .onConflict(['campaign_id', 'user_id', 'reference_id'])
+                .ignore()
+        } else {
+            await CampaignSend.insert(send)
+        }
     }
 
     return sendCampaignJob({
