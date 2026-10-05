@@ -32,7 +32,12 @@ export default class MemoryQueueProvider implements QueueProvider {
 
     async delay(job: Job, milliseconds: number): Promise<void> {
         job.options.delay = milliseconds
-        await this.enqueue(job)
+
+        // The job being delayed is still registered under its id, which would
+        // make enqueue() drop the re-queue as a duplicate
+        const jobId = job.options.jobId
+        if (jobId && this.jobs[jobId] === job) delete this.jobs[jobId]
+        setTimeout(() => this.enqueue(job), milliseconds)
     }
 
     start(): void {
@@ -54,7 +59,9 @@ export default class MemoryQueueProvider implements QueueProvider {
             if (jobId) {
                 const job = this.jobs[jobId]
                 if (job) await this.queue.dequeue(job)
-                delete this.jobs[jobId]
+
+                // A delayed job re-registers itself under the same id
+                if (this.jobs[jobId] === job) delete this.jobs[jobId]
             }
 
             jobId = this.backlog.shift()

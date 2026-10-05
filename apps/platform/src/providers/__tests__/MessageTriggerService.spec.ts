@@ -47,6 +47,7 @@ describe('prepareSend', () => {
         expect(delay).toHaveBeenCalledTimes(1)
         expect(delay.mock.calls[0][0]).toBe(raw)
         expect(delay.mock.calls[0][1]).toBeGreaterThanOrEqual(1000)
+        expect(delay.mock.calls[0][1]).toBeLessThanOrEqual(6000)
         expect(info).toHaveBeenCalledWith(
             expect.objectContaining({ campaign_id: 1, user_id: 2, reference_id: 'ref-a' }),
             'send:locked',

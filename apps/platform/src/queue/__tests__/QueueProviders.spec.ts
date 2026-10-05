@@ -1,3 +1,4 @@
+import MemoryQueueProvider from '../MemoryQueueProvider'
 import RedisQueueProvider from '../RedisQueueProvider'
 import SQSQueueProvider from '../SQSQueueProvider'
 import Job from '../Job'
@@ -5,6 +6,7 @@ import { logger } from '../../config/logger'
 
 afterEach(() => {
     jest.restoreAllMocks()
+    jest.useRealTimers()
 })
 
 class TestJob extends Job {
@@ -42,6 +44,26 @@ describe('RedisQueueProvider', () => {
         await provider.enqueue(new TestJob({}))
 
         expect(add.mock.calls[0][2].removeOnFail).toEqual({ count: 50, age: 24 * 3600 })
+    })
+})
+
+describe('MemoryQueueProvider', () => {
+    test('delaying the job being processed re-queues it after the delay', async () => {
+        jest.useFakeTimers({ doNotFake: ['performance'] })
+        const provider = new MemoryQueueProvider({} as any)
+        const job = new TestJob({})
+        job.options.jobId = 'sid_1_2_ref-a'
+        provider.jobs[job.options.jobId] = job
+        provider.backlog = []
+
+        await provider.delay(job, 3000)
+        expect(provider.backlog).toEqual([])
+
+        jest.advanceTimersByTime(3000)
+        await Promise.resolve()
+
+        expect(provider.backlog).toEqual(['sid_1_2_ref-a'])
+        expect(provider.jobs['sid_1_2_ref-a']).toBe(job)
     })
 })
 
