@@ -1,31 +1,65 @@
 import { Job } from '../queue'
 import UserDeviceJob from '../users/UserDeviceJob'
 import EventPostJob from '../client/EventPostJob'
-import { uuid } from '../utilities'
-import { getCampaign, triggerCampaignSend } from './CampaignService'
+import { getCampaign, getCampaignSend, sendCampaignJob, triggerCampaignSend } from './CampaignService'
+import Campaign, { CampaignSend } from './Campaign'
 import { User } from '../users/User'
 import { UserEvent } from '../users/UserEvent'
+import { getUserFromClientId } from '../users/UserRepository'
+import { getCampaignTriggerEvent } from '../users/UserEventRepository'
+import { logger } from '../config/logger'
 
 export interface CampaignTriggerSendParams {
     project_id: number
     campaign_id: number
+    reference_id: string
     user: Pick<User, 'email' | 'phone' | 'timezone' | 'locale'> & { external_id: string, device_token?: string }
     event: Record<string, any>
+}
+
+// A send already exists for this reference: either it is done, or it is
+// still waiting and its email job may have been lost, so queue it again
+// with the event it was created from (same job id, so BullMQ dedupes and
+// the hasCompleted guard and send lock prevent a second delivery)
+const resumeSend = async (campaign: Campaign, userId: number, send: CampaignSend, reference_id: string) => {
+    if (send.hasCompleted) {
+        logger.info({ campaignId: campaign.id, userId, reference_id, state: send.state }, 'campaign:trigger:duplicate')
+        return
+    }
+
+    const event = await getCampaignTriggerEvent(campaign.id, userId, reference_id)
+    if (!event) {
+        throw new Error(`campaign:trigger:missing_event campaign=${campaign.id} user=${userId} reference=${reference_id}`)
+    }
+
+    await sendCampaignJob({
+        campaign,
+        user: userId,
+        event: event.id,
+        reference_type: 'trigger',
+        reference_id,
+    }).queue()
 }
 
 export default class CampaignTriggerSendJob extends Job {
     static $name = 'campaign_trigger_send_job'
 
     static from(data: CampaignTriggerSendParams): CampaignTriggerSendJob {
-        return new this(data)
+        return new this(data).jobId(`trigger_${data.campaign_id}_${data.reference_id}`)
     }
 
-    static async handler({ project_id, campaign_id, user, event }: CampaignTriggerSendParams) {
+    static async handler({ project_id, campaign_id, reference_id, user, event }: CampaignTriggerSendParams) {
 
         const { external_id, email, phone, device_token, locale, timezone, ...data } = user
 
         const campaign = await getCampaign(campaign_id, project_id)
         if (!campaign) return
+
+        const existingUser = await getUserFromClientId(project_id, { external_id })
+        const existingSend = existingUser && await getCampaignSend(campaign_id, existingUser.id, reference_id)
+        if (existingUser && existingSend) {
+            return await resumeSend(campaign, existingUser.id, existingSend, reference_id)
+        }
 
         const { user: { id: userId }, event: { id: eventId } } = await EventPostJob.from({
             project_id,
@@ -34,7 +68,7 @@ export default class CampaignTriggerSendJob extends Job {
                 external_id: user.external_id,
                 data: {
                     ...event,
-                    campaign: { id: campaign_id, name: campaign.name },
+                    campaign: { id: campaign_id, name: campaign.name, reference_id },
                 },
                 user: { external_id, email, phone, data, locale, timezone },
             },
@@ -49,12 +83,14 @@ export default class CampaignTriggerSendJob extends Job {
             }).handle()
         }
 
-        await triggerCampaignSend({
+        const job = await triggerCampaignSend({
             campaign,
             user: userId,
-            reference_id: uuid(),
+            reference_id,
             reference_type: 'trigger',
             event: eventId,
-        }).then(job => job?.queue())
+            idempotent: true,
+        })
+        await job?.queue()
     }
 }

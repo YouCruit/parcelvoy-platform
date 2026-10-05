@@ -3,7 +3,7 @@ import { JSONSchemaType, validate } from '../core/validate'
 import Campaign, { CampaignCreateParams, CampaignUpdateParams } from './Campaign'
 import { archiveCampaign, campaignPreview, createCampaign, deleteCampaign, duplicateCampaign, getCampaign, getCampaignUsers, pagedCampaigns, updateCampaign } from './CampaignService'
 import { searchParamsSchema, SearchSchema } from '../core/searchParams'
-import { extractQueryParams } from '../utilities'
+import { extractQueryParams, uuid } from '../utilities'
 import { ProjectState } from '../auth/AuthMiddleware'
 import { projectRoleMiddleware } from '../projects/ProjectService'
 import { Context, Next } from 'koa'
@@ -175,7 +175,7 @@ router.get('/:campaignId/preview', async ctx => {
     ctx.body = await campaignPreview(ctx.state.project, ctx.state.campaign!)
 })
 
-type CampaignTriggerSchema = Omit<CampaignTriggerSendParams, 'project_id' | 'campaign_id'>
+type CampaignTriggerSchema = Omit<CampaignTriggerSendParams, 'project_id' | 'campaign_id' | 'reference_id'>
 
 const campaignTriggerParams: JSONSchemaType<CampaignTriggerSchema> = {
     $id: 'campaignTrigger',
@@ -209,6 +209,7 @@ router.post('/:campaignId/trigger', async ctx => {
 
     await CampaignTriggerSendJob.from({
         ...payload,
+        reference_id: uuid(),
         project_id: project.id,
         campaign_id: ctx.state.campaign!.id,
     }).queue()

@@ -42,3 +42,17 @@ export const getUserEvents = async (id: number, params: PageParams, projectId: n
             .orderBy('id', 'desc'),
     )
 }
+
+// The campaign_trigger event a trigger send was created from. The trigger
+// job stamps `data.campaign.{id,reference_id}`, so a re-queued send can
+// render the original event instead of none. Scoped by campaign because a
+// caller may reuse one reference across campaigns for the same user
+export const getCampaignTriggerEvent = async (campaignId: number, userId: number, referenceId: string): Promise<UserEvent | undefined> => {
+    return await UserEvent.first(qb => qb
+        .where('name', 'campaign_trigger')
+        .where('user_id', userId)
+        .whereRaw('JSON_EXTRACT(data, \'$.campaign.id\') = ?', [campaignId])
+        .whereRaw('JSON_UNQUOTE(JSON_EXTRACT(data, \'$.campaign.reference_id\')) = ?', [referenceId])
+        .orderBy('id', 'desc'),
+    )
+}
