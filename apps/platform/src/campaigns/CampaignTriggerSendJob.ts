@@ -55,7 +55,7 @@ export default class CampaignTriggerSendJob extends Job {
         return new this(data).jobId(`trigger_${data.campaign_id}_${data.reference_id}`)
     }
 
-    // Jobs queued before YN-10996 carry no reference
+    // Jobs queued by an older image carry no reference
     static async handler({ project_id, campaign_id, reference_id: incoming, user, event }: Omit<CampaignTriggerSendParams, 'reference_id'> & { reference_id?: string }) {
         const reference_id = incoming ?? uuid()
         const { external_id, email, phone, device_token, locale, timezone, ...data } = user

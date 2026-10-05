@@ -6,6 +6,7 @@ import { createTestProject } from '../../projects/__tests__/ProjectTestHelpers'
 import { createProvider } from '../../providers/ProviderRepository'
 import { createSubscription } from '../../subscriptions/SubscriptionService'
 import { uuid } from '../../utilities'
+import { logger } from '../../config/logger'
 import { createCampaign } from '../CampaignService'
 import CampaignTriggerSendJob from '../CampaignTriggerSendJob'
 
@@ -74,6 +75,7 @@ describe('POST /campaigns/:campaignId/trigger', () => {
     test('mints a reference when the caller sends none', async () => {
         const { campaign, trigger } = await setup()
         const spy = jest.spyOn(App.main.queue, 'enqueue').mockResolvedValue()
+        const info = jest.spyOn(logger, 'info')
 
         const response = await trigger(body())
 
@@ -81,6 +83,10 @@ describe('POST /campaigns/:campaignId/trigger', () => {
         const [job] = triggerJobs(spy)
         expect(job.data.reference_id).toMatch(/^[0-9a-f-]{36}$/)
         expect(job.options.jobId).toEqual(`trigger_${campaign.id}_${job.data.reference_id}`)
+        expect(info).toHaveBeenCalledWith(
+            { campaign_id: campaign.id, reference_id: job.data.reference_id },
+            'campaign:trigger:reference_minted',
+        )
     })
 
     test.each([
@@ -98,12 +104,18 @@ describe('POST /campaigns/:campaignId/trigger', () => {
     })
 
     test('answers 503 when the enqueue fails', async () => {
-        const { trigger } = await setup()
-        jest.spyOn(App.main.queue, 'enqueue').mockRejectedValue(new Error('redis down'))
+        const { campaign, trigger } = await setup()
+        const error = new Error('redis down')
+        jest.spyOn(App.main.queue, 'enqueue').mockRejectedValue(error)
+        const logged = jest.spyOn(logger, 'error')
 
         const response = await trigger(body({ reference_id: 'ref-2' }))
 
         expect(response.status).toBe(503)
         expect(response.body.error).toEqual('Unable to queue trigger')
+        expect(logged).toHaveBeenCalledWith(
+            { error, campaign_id: campaign.id, reference_id: 'ref-2' },
+            'campaign:trigger:enqueue_failed',
+        )
     })
 })

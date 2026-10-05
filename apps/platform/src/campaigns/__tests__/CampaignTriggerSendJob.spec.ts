@@ -7,6 +7,7 @@ import { createSubscription } from '../../subscriptions/SubscriptionService'
 import { UserEvent } from '../../users/UserEvent'
 import { getUserFromClientId } from '../../users/UserRepository'
 import { uuid } from '../../utilities'
+import { logger } from '../../config/logger'
 import Campaign, { CampaignSend, CampaignSendState } from '../Campaign'
 import { createCampaign } from '../CampaignService'
 import CampaignTriggerSendJob, { CampaignTriggerSendParams } from '../CampaignTriggerSendJob'
@@ -49,11 +50,11 @@ const params = (campaign: Campaign, reference_id: string, external_id = uuid()):
 // EmailJob enqueue reject, as a Redis blip would.
 const captureQueue = (failEmailOnce = false) => {
     const emails: EncodedJob[] = []
-    let failed = !failEmailOnce
+    let alreadyFailed = !failEmailOnce
     jest.spyOn(App.main.queue, 'enqueue').mockImplementation(async job => {
         if (!(job instanceof EmailJob)) return
-        if (!failed) {
-            failed = true
+        if (!alreadyFailed) {
+            alreadyFailed = true
             throw new Error('redis down')
         }
         emails.push(job)
@@ -96,7 +97,7 @@ describe('CampaignTriggerSendJob', () => {
         expect(emails[0].data.event_id).toEqual(events[0].id)
     })
 
-    test('a job queued without a reference (pre-YN-10996 image) still sends once', async () => {
+    test('a job queued without a reference (older image) still sends once', async () => {
         const campaign = await createTriggerCampaign()
         const emails = captureQueue()
         const payload = { ...params(campaign, 'unused'), reference_id: undefined }
@@ -141,12 +142,41 @@ describe('CampaignTriggerSendJob', () => {
 
         jest.restoreAllMocks()
         const emails = captureQueue()
+        const info = jest.spyOn(logger, 'info')
         await CampaignTriggerSendJob.handler(payload)
 
         const after = await loadState(campaign, payload.user.external_id)
         expect(after.rows).toHaveLength(1)
         expect(after.events).toHaveLength(1)
         expect(emails).toHaveLength(0)
+        expect(info).toHaveBeenCalledWith(
+            expect.objectContaining({ campaignId: campaign.id, reference_id: payload.reference_id, state }),
+            'campaign:trigger:duplicate',
+        )
+    })
+
+    test('recovery renders the original event, not a later one with the same reference', async () => {
+        const campaign = await createTriggerCampaign()
+        const reference_id = uuid()
+        const payload = params(campaign, reference_id)
+        captureQueue()
+        await CampaignTriggerSendJob.handler(payload)
+        const before = await loadState(campaign, payload.user.external_id)
+        await UserEvent.insert({
+            name: 'campaign_trigger',
+            project_id: campaign.project_id,
+            user_id: before.user.id,
+            data: { token: 'planted', campaign: { id: campaign.id, reference_id } },
+        })
+
+        jest.restoreAllMocks()
+        const emails = captureQueue()
+        await CampaignTriggerSendJob.handler(payload)
+
+        const after = await loadState(campaign, payload.user.external_id)
+        expect(after.events).toHaveLength(2)
+        expect(emails).toHaveLength(1)
+        expect(emails[0].data.event_id).toEqual(before.events[0].id)
     })
 
     test('repeat while pending with its event deleted fails loudly', async () => {
