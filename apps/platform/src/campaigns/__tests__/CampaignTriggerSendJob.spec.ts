@@ -75,6 +75,7 @@ describe('CampaignTriggerSendJob', () => {
             project_id: 1, campaign_id: 2, reference_id: 'ref-1', user: { external_id: 'x' }, event: {},
         })
         expect(job.options.jobId).toEqual('trigger_2_ref-1')
+        expect(job.options.attempts).toEqual(8)
     })
 
     test('first run creates one row, one stamped event and one email job', async () => {
@@ -93,6 +94,20 @@ describe('CampaignTriggerSendJob', () => {
         expect(emails).toHaveLength(1)
         expect(emails[0].options.jobId).toEqual(`sid_${campaign.id}_${user.id}_${reference_id}`)
         expect(emails[0].data.event_id).toEqual(events[0].id)
+    })
+
+    test('a job queued without a reference (pre-YN-10996 image) still sends once', async () => {
+        const campaign = await createTriggerCampaign()
+        const emails = captureQueue()
+        const payload = { ...params(campaign, 'unused'), reference_id: undefined }
+
+        await CampaignTriggerSendJob.handler(payload as any)
+
+        const { rows, events } = await loadState(campaign, payload.user.external_id)
+        expect(rows).toHaveLength(1)
+        expect(rows[0].reference_id).toMatch(/^[0-9a-f-]{36}$/)
+        expect(events).toHaveLength(1)
+        expect(emails).toHaveLength(1)
     })
 
     test.each<CampaignSendState>(['pending', 'throttled'])('repeat while %s re-queues with the original event', async (state) => {
