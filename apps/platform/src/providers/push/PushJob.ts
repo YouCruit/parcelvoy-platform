@@ -23,23 +23,23 @@ export default class PushJob extends Job {
 
         const { campaign, template, user, project, context } = data
 
+        // Load push channel so its ready to send
+        const channel = await loadPushChannel(campaign.provider_id, project.id)
+        if (!channel) {
+            await updateSendState({
+                campaign,
+                user,
+                reference_id: trigger.reference_id,
+                state: 'aborted',
+            })
+            return
+        }
+
+        // Check current send rate and if the send is locked
+        const isReady = await prepareSend(channel, data, raw)
+        if (!isReady) return
+
         try {
-            // Load email channel so its ready to send
-            const channel = await loadPushChannel(campaign.provider_id, project.id)
-            if (!channel) {
-                await updateSendState({
-                    campaign,
-                    user,
-                    reference_id: trigger.reference_id,
-                    state: 'aborted',
-                })
-                return
-            }
-
-            // Check current send rate and if the send is locked
-            const isReady = await prepareSend(channel, data, raw)
-            if (!isReady) return
-
             // Send the push and update the send record
             const result = await channel.send(template, data)
             if (result) {
