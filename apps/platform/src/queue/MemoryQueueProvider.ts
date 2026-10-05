@@ -12,6 +12,7 @@ export default class MemoryQueueProvider implements QueueProvider {
     jobs: Record<string, Job> = {}
     backlog: string[] = []
     loop: NodeJS.Timeout | undefined
+    timers = new Set<NodeJS.Timeout>()
     batchSize = 1000 as const
 
     constructor(queue: Queue) {
@@ -32,12 +33,11 @@ export default class MemoryQueueProvider implements QueueProvider {
 
     async delay(job: Job, milliseconds: number): Promise<void> {
         job.options.delay = milliseconds
-
-        // The job being delayed is still registered under its id, which would
-        // make enqueue() drop the re-queue as a duplicate
-        const jobId = job.options.jobId
-        if (jobId && this.jobs[jobId] === job) delete this.jobs[jobId]
-        setTimeout(() => this.enqueue(job), milliseconds)
+        const timer = setTimeout(() => {
+            this.timers.delete(timer)
+            this.enqueue(job)
+        }, milliseconds)
+        this.timers.add(timer)
     }
 
     start(): void {
@@ -49,20 +49,17 @@ export default class MemoryQueueProvider implements QueueProvider {
     close(): void {
         clearTimeout(this.loop)
         this.loop = undefined
+        for (const timer of this.timers) clearTimeout(timer)
+        this.timers.clear()
     }
 
     private async process() {
         let jobId = this.backlog.shift()
         while (jobId) {
 
-            // If we have a jobId fetch job and dequeue
-            if (jobId) {
-                const job = this.jobs[jobId]
-                if (job) await this.queue.dequeue(job)
-
-                // A delayed job re-registers itself under the same id
-                if (this.jobs[jobId] === job) delete this.jobs[jobId]
-            }
+            const job = this.jobs[jobId]
+            delete this.jobs[jobId]
+            if (job) await this.queue.dequeue(job)
 
             jobId = this.backlog.shift()
         }

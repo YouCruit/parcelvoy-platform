@@ -53,8 +53,6 @@ describe('MemoryQueueProvider', () => {
         const provider = new MemoryQueueProvider({} as any)
         const job = new TestJob({})
         job.options.jobId = 'sid_1_2_ref-a'
-        provider.jobs[job.options.jobId] = job
-        provider.backlog = []
 
         await provider.delay(job, 3000)
         expect(provider.backlog).toEqual([])
@@ -64,6 +62,41 @@ describe('MemoryQueueProvider', () => {
 
         expect(provider.backlog).toEqual(['sid_1_2_ref-a'])
         expect(provider.jobs['sid_1_2_ref-a']).toBe(job)
+    })
+
+    test('a job re-queued while its dequeue is in flight stays registered', async () => {
+        jest.useFakeTimers({ doNotFake: ['performance'] })
+        const job = new TestJob({})
+        job.options.jobId = 'sid_1_2_ref-c'
+        const dequeue = jest.fn().mockImplementationOnce(async () => {
+            await provider.delay(job, 0)
+            jest.advanceTimersByTime(0)
+        })
+        const provider: MemoryQueueProvider = new MemoryQueueProvider({ dequeue } as any)
+        provider.jobs['sid_1_2_ref-c'] = job
+        provider.backlog = ['sid_1_2_ref-c']
+
+        ;(provider as any).process()
+        for (let i = 0; i < 10; i++) await Promise.resolve()
+
+        expect(dequeue).toHaveBeenCalledTimes(2)
+    })
+
+    test('close cancels a pending delayed re-queue', async () => {
+        jest.useFakeTimers({ doNotFake: ['performance'] })
+        const provider = new MemoryQueueProvider({} as any)
+        const job = new TestJob({})
+        job.options.jobId = 'sid_1_2_ref-b'
+
+        await provider.delay(job, 3000)
+        provider.close()
+
+        jest.advanceTimersByTime(3000)
+        await Promise.resolve()
+
+        expect(provider.backlog).toEqual([])
+        expect(provider.jobs['sid_1_2_ref-b']).toBeUndefined()
+        expect(jest.getTimerCount()).toBe(0)
     })
 })
 
