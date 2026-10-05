@@ -2,6 +2,7 @@ import { JourneyUserStep } from '../journey/JourneyStep'
 import App from '../app'
 import Campaign from '../campaigns/Campaign'
 import { getCampaignSend, updateSendState } from '../campaigns/CampaignService'
+import { logger } from '../config/logger'
 import { Channel } from '../config/channels'
 import { RateLimitResponse } from '../config/rateLimit'
 import { acquireLock } from '../core/Lock'
@@ -232,5 +233,10 @@ export const notifyJourney = async (reference_id: string, response?: any) => {
     }
 
     // Trigger processing of this journey entrance
-    await JourneyProcessJob.from({ entrance_id: referenceId }).queue()
+    // The message was already delivered, so a failed follow-up must not mark the send failed
+    try {
+        await JourneyProcessJob.from({ entrance_id: referenceId }).queue()
+    } catch (error) {
+        logger.error({ error, reference_id, entrance_id: referenceId }, 'journey:error:notify_enqueue')
+    }
 }

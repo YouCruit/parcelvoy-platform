@@ -8,6 +8,7 @@ import { UserEvent } from '../users/UserEvent'
 import { getUserFromClientId } from '../users/UserRepository'
 import { getCampaignTriggerEvent } from '../users/UserEventRepository'
 import { logger } from '../config/logger'
+import { uuid } from '../utilities'
 
 export interface CampaignTriggerSendParams {
     project_id: number
@@ -44,12 +45,19 @@ const resumeSend = async (campaign: Campaign, userId: number, send: CampaignSend
 export default class CampaignTriggerSendJob extends Job {
     static $name = 'campaign_trigger_send_job'
 
+    // Recovery after a failed inner enqueue relies on BullMQ retrying this job
+    options = {
+        delay: 0,
+        attempts: 8,
+    }
+
     static from(data: CampaignTriggerSendParams): CampaignTriggerSendJob {
         return new this(data).jobId(`trigger_${data.campaign_id}_${data.reference_id}`)
     }
 
-    static async handler({ project_id, campaign_id, reference_id, user, event }: CampaignTriggerSendParams) {
-
+    // Jobs queued before YN-10996 carry no reference
+    static async handler({ project_id, campaign_id, reference_id: incoming, user, event }: Omit<CampaignTriggerSendParams, 'reference_id'> & { reference_id?: string }) {
+        const reference_id = incoming ?? uuid()
         const { external_id, email, phone, device_token, locale, timezone, ...data } = user
 
         const campaign = await getCampaign(campaign_id, project_id)

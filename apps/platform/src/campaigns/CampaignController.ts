@@ -222,6 +222,9 @@ router.post('/:campaignId/trigger', async ctx => {
 
     // Minted here rather than in the job so a retried job keeps its reference
     const reference = reference_id ?? uuid()
+    if (!reference_id) {
+        logger.info({ campaign_id, reference_id: reference }, 'campaign:trigger:reference_minted')
+    }
 
     try {
         await CampaignTriggerSendJob.from({
