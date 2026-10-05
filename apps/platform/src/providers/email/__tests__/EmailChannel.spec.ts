@@ -174,5 +174,33 @@ describe('EmailChannel', () => {
             expect(headers['X-Dot-Number']).toEqual('1111111')
             expect(headers['X-Company-Name']).toEqual('Shared User Co')
         })
+
+        test('never mixes carriers: an event DOT without a name does not borrow the user\'s name', async () => {
+            const variables = await setup({ dot_number: 1111111, company_name: 'Shared User Co' })
+            variables.event = UserEvent.fromJson({
+                name: 'campaign_trigger',
+                data: { dot_number: 2222222 },
+            })
+            const channel = new EmailChannel(new LoggerEmailProvider())
+
+            const headers = channel.buildHeaders(variables)
+
+            expect(headers['X-Dot-Number']).toEqual('2222222')
+            expect(headers).not.toHaveProperty('X-Company-Name')
+        })
+
+        test('an event with only a company name does not override the user\'s pair', async () => {
+            const variables = await setup({ dot_number: 1111111, company_name: 'Shared User Co' })
+            variables.event = UserEvent.fromJson({
+                name: 'campaign_trigger',
+                data: { company_name: 'Event Carrier LLC' },
+            })
+            const channel = new EmailChannel(new LoggerEmailProvider())
+
+            const headers = channel.buildHeaders(variables)
+
+            expect(headers['X-Dot-Number']).toEqual('1111111')
+            expect(headers['X-Company-Name']).toEqual('Shared User Co')
+        })
     })
 })

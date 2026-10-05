@@ -36,15 +36,19 @@ export default class EmailChannel {
      * and an empty header is just noise on the wire. They are synced onto the
      * user by parcelvoy-caretaker as data.dot_number / data.company_name.
      *
-     * The triggering event's values win over the user's: several carriers can
-     * share one address and so one user, whose data holds whichever carrier
-     * was patched last, while the event belongs to this send alone.
+     * The carrier is taken as a pair, never field by field: when the
+     * triggering event carries a dot_number, both values come from the event
+     * (a missing company_name stays missing); otherwise both come from the
+     * user. Several carriers can share one address and so one user, whose data
+     * holds whichever carrier was patched last, while the event belongs to
+     * this send alone.
      */
     buildHeaders(variables: Variables): Record<string, string> {
         const userData = variables.user.data ?? {}
         const eventData = variables.event?.data ?? {}
-        const dotNumber = eventData.dot_number || userData.dot_number
-        const companyName = eventData.company_name || userData.company_name
+        const carrier = eventData.dot_number ? eventData : userData
+        const dotNumber = carrier.dot_number
+        const companyName = carrier.company_name
         return {
             'X-Campaign-Id': encodeHashid(variables.context.campaign_id),
             'X-Subscription-Id': encodeHashid(variables.context.subscription_id),
