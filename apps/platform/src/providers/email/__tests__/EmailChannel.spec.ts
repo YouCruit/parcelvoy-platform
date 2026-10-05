@@ -1,6 +1,7 @@
 import Admin from '../../../auth/Admin'
 import { createProject } from '../../../projects/ProjectService'
 import { Variables } from '../../../render'
+import { UserEvent } from '../../../users/UserEvent'
 import { createUser } from '../../../users/UserRepository'
 import { encodeHashid, uuid } from '../../../utilities'
 import EmailChannel from '../EmailChannel'
@@ -140,6 +141,38 @@ describe('EmailChannel', () => {
 
             expect(headers['X-Dot-Number']).toEqual('7654321')
             expect(headers).not.toHaveProperty('X-Company-Name')
+        })
+
+        // Several carriers can share one address and so one user, whose data
+        // holds whichever carrier was patched last. The triggering event is
+        // per send, so its carrier must win or the bridge mirrors the send to
+        // the wrong lead.
+        test('prefers the carrier on the triggering event over the shared user', async () => {
+            const variables = await setup({ dot_number: 1111111, company_name: 'Shared User Co' })
+            variables.event = UserEvent.fromJson({
+                name: 'campaign_trigger',
+                data: { dot_number: 2222222, company_name: 'Event Carrier LLC' },
+            })
+            const channel = new EmailChannel(new LoggerEmailProvider())
+
+            const headers = channel.buildHeaders(variables)
+
+            expect(headers['X-Dot-Number']).toEqual('2222222')
+            expect(headers['X-Company-Name']).toEqual('Event Carrier LLC')
+        })
+
+        test('falls back to the user when the event has no carrier fields', async () => {
+            const variables = await setup({ dot_number: 1111111, company_name: 'Shared User Co' })
+            variables.event = UserEvent.fromJson({
+                name: 'campaign_trigger',
+                data: { mapping_id: 'm-1', dot_number: '' },
+            })
+            const channel = new EmailChannel(new LoggerEmailProvider())
+
+            const headers = channel.buildHeaders(variables)
+
+            expect(headers['X-Dot-Number']).toEqual('1111111')
+            expect(headers['X-Company-Name']).toEqual('Shared User Co')
         })
     })
 })

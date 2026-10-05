@@ -35,17 +35,24 @@ export default class EmailChannel {
      * treats a blank DOT and a missing DOT identically (the send is unmapped),
      * and an empty header is just noise on the wire. They are synced onto the
      * user by parcelvoy-caretaker as data.dot_number / data.company_name.
+     *
+     * The triggering event's values win over the user's: several carriers can
+     * share one address and so one user, whose data holds whichever carrier
+     * was patched last, while the event belongs to this send alone.
      */
     buildHeaders(variables: Variables): Record<string, string> {
-        const data = variables.user.data ?? {}
+        const userData = variables.user.data ?? {}
+        const eventData = variables.event?.data ?? {}
+        const dotNumber = eventData.dot_number || userData.dot_number
+        const companyName = eventData.company_name || userData.company_name
         return {
             'X-Campaign-Id': encodeHashid(variables.context.campaign_id),
             'X-Subscription-Id': encodeHashid(variables.context.subscription_id),
             'X-External-Id': variables.user.external_id ?? '',
             'X-Reference-Id': variables.context.reference_id ?? '',
             'X-Subscription-Id-Raw': String(variables.context.subscription_id),
-            ...(data.dot_number ? { 'X-Dot-Number': String(data.dot_number) } : {}),
-            ...(data.company_name ? { 'X-Company-Name': String(data.company_name) } : {}),
+            ...(dotNumber ? { 'X-Dot-Number': String(dotNumber) } : {}),
+            ...(companyName ? { 'X-Company-Name': String(companyName) } : {}),
         }
     }
 
