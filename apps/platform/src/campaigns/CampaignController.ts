@@ -8,6 +8,8 @@ import { ProjectState } from '../auth/AuthMiddleware'
 import { projectRoleMiddleware } from '../projects/ProjectService'
 import { Context, Next } from 'koa'
 import CampaignTriggerSendJob, { CampaignTriggerSendParams } from './CampaignTriggerSendJob'
+import { RequestError } from '../core/errors'
+import { logger } from '../config/logger'
 
 const router = new Router<ProjectState & { campaign?: Campaign }>({
     prefix: '/campaigns',
@@ -175,7 +177,9 @@ router.get('/:campaignId/preview', async ctx => {
     ctx.body = await campaignPreview(ctx.state.project, ctx.state.campaign!)
 })
 
-type CampaignTriggerSchema = Omit<CampaignTriggerSendParams, 'project_id' | 'campaign_id' | 'reference_id'>
+type CampaignTriggerSchema = Omit<CampaignTriggerSendParams, 'project_id' | 'campaign_id' | 'reference_id'> & {
+    reference_id?: string
+}
 
 const campaignTriggerParams: JSONSchemaType<CampaignTriggerSchema> = {
     $id: 'campaignTrigger',
@@ -199,20 +203,38 @@ const campaignTriggerParams: JSONSchemaType<CampaignTriggerSchema> = {
             type: 'object',
             additionalProperties: true,
         },
+        // Caller idempotency key: repeated triggers with the same value
+        // produce one send (campaign_sends PK is campaign/user/reference)
+        reference_id: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 255,
+            nullable: true,
+        },
     },
     additionalProperties: false,
 }
 
 router.post('/:campaignId/trigger', async ctx => {
     const project = ctx.state.project
-    const payload = validate(campaignTriggerParams, ctx.request.body)
+    const { reference_id, ...payload } = validate(campaignTriggerParams, ctx.request.body)
+    const campaign_id = ctx.state.campaign!.id
 
-    await CampaignTriggerSendJob.from({
-        ...payload,
-        reference_id: uuid(),
-        project_id: project.id,
-        campaign_id: ctx.state.campaign!.id,
-    }).queue()
+    // Minted here rather than in the job so a retried job keeps its reference
+    const reference = reference_id ?? uuid()
+
+    try {
+        await CampaignTriggerSendJob.from({
+            ...payload,
+            reference_id: reference,
+            project_id: project.id,
+            campaign_id,
+        }).queue()
+    } catch (error) {
+        // api.ts maps unknown errors to 400, which callers treat as permanent
+        logger.error({ error, campaign_id, reference_id: reference }, 'campaign:trigger:enqueue_failed')
+        throw new RequestError('Unable to queue trigger', 503)
+    }
 
     ctx.body = { success: true }
 })
