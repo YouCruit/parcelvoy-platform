@@ -47,7 +47,7 @@ export default class TextJob extends Job {
         } catch (error: any) {
             await failSend(data, error, (error: any) => !(error instanceof UnsubscribeTextError || error instanceof UndeliverableTextError))
         } finally {
-            await releaseLock(messageLock(campaign, user))
+            await releaseLock(messageLock(data))
         }
     }
 }

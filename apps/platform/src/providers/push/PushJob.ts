@@ -84,7 +84,7 @@ export default class PushJob extends Job {
                 App.main.error.notify(error)
             }
         } finally {
-            await releaseLock(messageLock(campaign, user))
+            await releaseLock(messageLock(data))
         }
     }
 }

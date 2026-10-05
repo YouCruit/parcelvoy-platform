@@ -118,7 +118,10 @@ export async function loadSendJob<T extends TemplateType>({ campaign_id, user_id
     return response
 }
 
-export const messageLock = (campaign: Campaign, user: User) => `parcelvoy:send:${campaign.id}:${user.id}`
+// Keyed per send, not per user: one user can have several trigger sends in
+// flight at once, and they must not block each other
+export const messageLock = ({ campaign, user, context }: Pick<MessageTriggerHydrated<unknown>, 'campaign' | 'user' | 'context'>) =>
+    `parcelvoy:send:${campaign.id}:${user.id}:${context.reference_id}`
 
 export const prepareSend = async <T>(
     channel: Channel,
@@ -149,8 +152,21 @@ export const prepareSend = async <T>(
     }
 
     // Create a lock for this process to make sure it doesn't run twice
-    const acquired = await acquireLock({ key: messageLock(campaign, user) })
-    if (!acquired) return false
+    const acquired = await acquireLock({ key: messageLock(message) })
+    if (!acquired) {
+
+        // Returning here would complete the job and leave the send pending
+        // forever, so retry it: a duplicate is then stopped by hasCompleted
+        const delay = 1000 + randomInt(0, 5000)
+        logger.info({
+            campaign_id: campaign.id,
+            user_id: user.id,
+            reference_id: message.context.reference_id,
+            delay,
+        }, 'send:locked')
+        await App.main.queue.delay(raw, delay)
+        return false
+    }
 
     return true
 }
