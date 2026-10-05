@@ -46,6 +46,7 @@ export default class RedisQueueProvider implements QueueProvider {
             await this.bull.add(name, data, opts)
         } catch (error) {
             logger.error(error, 'redis:error:enqueue')
+            throw error
         }
     }
 

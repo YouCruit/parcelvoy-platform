@@ -40,6 +40,7 @@ export default class SQSQueueProvider implements QueueProvider {
             await this.sqs.sendMessage(params)
         } catch (error) {
             logger.error(error, 'sqs:error:enqueue')
+            throw error
         }
     }
 
@@ -60,6 +61,7 @@ export default class SQSQueueProvider implements QueueProvider {
                 await this.sqs.sendMessageBatch(params)
             } catch (error) {
                 logger.error(error, 'sqs:error:enqueue')
+                throw error
             }
         }
     }
