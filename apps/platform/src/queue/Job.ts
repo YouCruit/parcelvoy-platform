@@ -4,6 +4,7 @@ interface JobOptions {
     delay?: number // Milliseconds
     attempts?: number
     jobId?: string
+    removeOnFail?: boolean | { count?: number, age?: number }
 }
 
 interface JobState {

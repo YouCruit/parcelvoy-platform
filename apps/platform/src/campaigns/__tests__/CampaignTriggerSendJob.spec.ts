@@ -77,6 +77,7 @@ describe('CampaignTriggerSendJob', () => {
         })
         expect(job.options.jobId).toEqual('trigger_2_ref-1')
         expect(job.options.attempts).toEqual(8)
+        expect(job.options.removeOnFail).toBe(true)
     })
 
     test('first run creates one row, one stamped event and one email job', async () => {

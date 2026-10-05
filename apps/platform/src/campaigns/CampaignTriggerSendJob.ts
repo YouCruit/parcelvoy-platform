@@ -45,10 +45,14 @@ const resumeSend = async (campaign: Campaign, userId: number, send: CampaignSend
 export default class CampaignTriggerSendJob extends Job {
     static $name = 'campaign_trigger_send_job'
 
-    // Recovery after a failed inner enqueue relies on BullMQ retrying this job
+    // Recovery after a failed inner enqueue relies on BullMQ retrying this job.
+    // Once retries are exhausted the job must not linger in the failed set:
+    // BullMQ silently ignores an add whose id already exists, so a kept
+    // failed job would swallow every later trigger with the same reference
     options = {
         delay: 0,
         attempts: 8,
+        removeOnFail: true,
     }
 
     static from(data: CampaignTriggerSendParams): CampaignTriggerSendJob {

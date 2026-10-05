@@ -21,6 +21,28 @@ describe('RedisQueueProvider', () => {
         await expect(provider.enqueue(new TestJob({}))).rejects.toBe(error)
         expect(logged).toHaveBeenCalledWith(error, 'redis:error:enqueue')
     })
+
+    test('a job\'s own removeOnFail overrides the provider default', async () => {
+        const provider = Object.create(RedisQueueProvider.prototype) as RedisQueueProvider
+        const add = jest.fn().mockResolvedValue(undefined)
+        provider.bull = { add } as any
+        const job = new TestJob({})
+        job.options.removeOnFail = true
+
+        await provider.enqueue(job)
+
+        expect(add.mock.calls[0][2].removeOnFail).toBe(true)
+    })
+
+    test('jobs without removeOnFail keep the provider default', async () => {
+        const provider = Object.create(RedisQueueProvider.prototype) as RedisQueueProvider
+        const add = jest.fn().mockResolvedValue(undefined)
+        provider.bull = { add } as any
+
+        await provider.enqueue(new TestJob({}))
+
+        expect(add.mock.calls[0][2].removeOnFail).toEqual({ count: 50, age: 24 * 3600 })
+    })
 })
 
 describe('SQSQueueProvider', () => {
