@@ -95,6 +95,9 @@ describe('POST /campaigns/:campaignId/trigger', () => {
 
     test.each([
         ['an empty reference', { reference_id: '' }],
+        ['an all-digit reference', { reference_id: '12345' }],
+        ['a reference with a colon', { reference_id: 'ref:logs' }],
+        ['a reference with a space', { reference_id: 'ref 1' }],
         ['an unknown field', { surprise: true }],
     ])('rejects %s without queueing', async (_, extra) => {
         const { trigger } = await setup()
@@ -112,6 +115,7 @@ describe('POST /campaigns/:campaignId/trigger', () => {
         const error = new Error('redis down')
         jest.spyOn(App.main.queue, 'enqueue').mockRejectedValue(error)
         const logged = jest.spyOn(logger, 'error')
+        const notified = jest.spyOn(App.main.error, 'notify')
 
         const response = await trigger(body({ reference_id: 'ref-2' }))
 
@@ -121,5 +125,19 @@ describe('POST /campaigns/:campaignId/trigger', () => {
             { error, campaign_id: campaign.id, reference_id: 'ref-2' },
             'campaign:trigger:enqueue_failed',
         )
+        expect(notified).toHaveBeenCalledWith(error, { campaign_id: campaign.id, reference_id: 'ref-2' })
+    })
+
+    test.each([
+        ['a base62 token', 'Ab3xYz09QrStUvWxYz01Kl'],
+        ['a UUID', '0b8f6c1e-2d3a-4e5f-9a7b-1c2d3e4f5a6b'],
+        ['a reference with dots and underscores', 'power_apply.12'],
+    ])('accepts %s as a reference', async (_, reference_id) => {
+        const { trigger } = await setup()
+        jest.spyOn(App.main.queue, 'enqueue').mockResolvedValue()
+
+        const response = await trigger(body({ reference_id }))
+
+        expect(response.status).toBe(200)
     })
 })

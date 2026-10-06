@@ -10,6 +10,7 @@ import { Context, Next } from 'koa'
 import CampaignTriggerSendJob, { CampaignTriggerSendParams } from './CampaignTriggerSendJob'
 import { RequestError } from '../core/errors'
 import { logger } from '../config/logger'
+import App from '../app'
 
 const router = new Router<ProjectState & { campaign?: Campaign }>({
     prefix: '/campaigns',
@@ -207,11 +208,15 @@ const campaignTriggerParams: JSONSchemaType<CampaignTriggerSchema> = {
         // produce one send (campaign_sends PK is campaign/user/reference).
         // MySQL compares the PK case-insensitively, but the job id and the
         // send lock use the exact string: a reference must be reused
-        // byte-for-byte, or concurrent triggers can share a row yet both send
+        // byte-for-byte, or concurrent triggers can share a row yet both send.
+        // Not all digits: journey sends key their rows on the numeric step id
+        // under the same PK. No colons: the reference ends up in the BullMQ
+        // job id, and BullMQ builds its Redis keys from the id with colons
         reference_id: {
             type: 'string',
             minLength: 1,
             maxLength: 255,
+            pattern: '^(?=.*[^0-9])[A-Za-z0-9_.-]+$',
             nullable: true,
         },
     },
@@ -237,8 +242,10 @@ router.post('/:campaignId/trigger', async ctx => {
             campaign_id,
         }).queue()
     } catch (error) {
-        // api.ts maps unknown errors to 400, which callers treat as permanent
+        // api.ts maps unknown errors to 400, which callers treat as permanent.
+        // It does not report a RequestError either, so notify here
         logger.error({ error, campaign_id, reference_id: reference }, 'campaign:trigger:enqueue_failed')
+        App.main.error.notify(error as Error, { campaign_id, reference_id: reference })
         throw new RequestError('Unable to queue trigger', 503)
     }
 
