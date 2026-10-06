@@ -115,11 +115,16 @@ export default class RedisQueueProvider implements QueueProvider {
         })
 
         // Emitted after every failed attempt, including ones BullMQ will
-        // retry; attemptsMade already counts the attempt that just failed
+        // retry. BullMQ sets finishedOn only once the job has failed for
+        // good, which also covers a job failed for stalling too often (that
+        // path counts no attempt). A stalled job with removeOnFail: true is
+        // deleted before the event fires, so it arrives without a job, and
+        // that failure is always terminal
         this.worker.on('failed', (job, error) => {
-            this.queue.errored(error, job?.data as EncodedJob, job && {
-                made: job.attemptsMade,
-                max: job.opts.attempts ?? 1,
+            this.queue.errored(error, job?.data as EncodedJob, {
+                made: job?.attemptsMade ?? 0,
+                max: job?.opts.attempts ?? 1,
+                exhausted: !job || job.finishedOn != null,
             })
         })
 

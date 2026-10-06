@@ -49,14 +49,14 @@ describe('RedisQueueProvider', () => {
             return { failed, errored }
         }
 
-        test('reports the attempts made and allowed', () => {
+        test('reports a retried attempt as not exhausted', () => {
             const { failed, errored } = startWorker()
             const error = new Error('boom')
             const data = { name: 'test_job' }
 
             failed({ data, attemptsMade: 2, opts: { attempts: 5 } }, error)
 
-            expect(errored).toHaveBeenCalledWith(error, data, { made: 2, max: 5 })
+            expect(errored).toHaveBeenCalledWith(error, data, { made: 2, max: 5, exhausted: false })
         })
 
         test('treats a job without attempts as a single attempt', () => {
@@ -64,9 +64,28 @@ describe('RedisQueueProvider', () => {
             const error = new Error('boom')
             const data = { name: 'test_job' }
 
-            failed({ data, attemptsMade: 1, opts: {} }, error)
+            failed({ data, attemptsMade: 1, opts: {}, finishedOn: 1 }, error)
 
-            expect(errored).toHaveBeenCalledWith(error, data, { made: 1, max: 1 })
+            expect(errored).toHaveBeenCalledWith(error, data, { made: 1, max: 1, exhausted: true })
+        })
+
+        test('a job failed for stalling is exhausted though it counted no attempt', () => {
+            const { failed, errored } = startWorker()
+            const error = new Error('job stalled more than allowable limit')
+            const data = { name: 'test_job' }
+
+            failed({ data, attemptsMade: 0, opts: { attempts: 8 }, finishedOn: 1 }, error)
+
+            expect(errored).toHaveBeenCalledWith(error, data, { made: 0, max: 8, exhausted: true })
+        })
+
+        test('a stalled job already removed on fail arrives without a job and is exhausted', () => {
+            const { failed, errored } = startWorker()
+            const error = new Error('job stalled more than allowable limit')
+
+            failed(undefined, error)
+
+            expect(errored).toHaveBeenCalledWith(error, undefined, { made: 0, max: 1, exhausted: true })
         })
     })
 
@@ -124,20 +143,22 @@ describe('Queue.errored', () => {
         const notified = jest.spyOn(App.main.error, 'notify').mockImplementation()
         const error = new Error('boom')
 
-        await queue.errored(error, job, { made: 1, max: 3 })
+        const attempts = { made: 1, max: 3, exhausted: false }
+        await queue.errored(error, job, attempts)
 
-        expect(logged).toHaveBeenCalledWith(expect.objectContaining({ attempts: { made: 1, max: 3 } }), 'queue:job:errored')
+        expect(logged).toHaveBeenCalledWith(expect.objectContaining({ attempts }), 'queue:job:errored')
         expect(logged).not.toHaveBeenCalledWith(expect.anything(), 'queue:job:exhausted')
-        expect(notified).toHaveBeenCalledWith(error, { ...job, attempts: { made: 1, max: 3 } })
+        expect(notified).toHaveBeenCalledWith(error, { ...job, attempts })
     })
 
     test('the last failed attempt is marked exhausted', async () => {
         const logged = jest.spyOn(logger, 'error').mockImplementation()
         jest.spyOn(App.main.error, 'notify').mockImplementation()
 
-        await queue.errored(new Error('boom'), job, { made: 3, max: 3 })
+        const attempts = { made: 3, max: 3, exhausted: true }
+        await queue.errored(new Error('boom'), job, attempts)
 
-        expect(logged).toHaveBeenCalledWith({ job, attempts: { made: 3, max: 3 } }, 'queue:job:exhausted')
+        expect(logged).toHaveBeenCalledWith({ job, attempts }, 'queue:job:exhausted')
     })
 })
 

@@ -12,10 +12,12 @@ interface JobState {
     attemptsMade: number
 }
 
-// How many times a failed job has run, out of how many it may
+// How many times a failed job has run, out of how many it may, and
+// whether it has stopped for good (no retry will follow)
 export interface JobAttempts {
     made: number
     max: number
+    exhausted: boolean
 }
 
 export interface EncodedJob {

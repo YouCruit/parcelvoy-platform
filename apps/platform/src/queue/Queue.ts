@@ -81,7 +81,7 @@ export default class Queue {
 
         // Every failed attempt lands here; mark the one after which the job
         // will not run again, so a dropped job is told apart from a retry
-        if (attempts && attempts.made >= attempts.max) {
+        if (attempts?.exhausted) {
             logger.error({ job, attempts }, 'queue:job:exhausted')
         }
         App.main.error.notify(error, attempts ? { ...job, attempts } : job)
