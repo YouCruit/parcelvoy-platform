@@ -1,17 +1,44 @@
 import App from '../../app'
 import * as Lock from '../../core/Lock'
 import { logger } from '../../config/logger'
-import { messageLock, notifyJourney, prepareSend } from '../MessageTriggerService'
+import * as CampaignService from '../../campaigns/CampaignService'
+import Project from '../../projects/Project'
+import { User } from '../../users/User'
+import { UserEvent } from '../../users/UserEvent'
+import { loadSendJob, messageLock, notifyJourney, prepareSend } from '../MessageTriggerService'
 
 afterEach(() => {
     jest.restoreAllMocks()
 })
 
 describe('notifyJourney', () => {
-    test('a failed follow-up enqueue does not propagate', async () => {
-        jest.spyOn(App.main.queue, 'enqueue').mockRejectedValue(new Error('redis down'))
+    test('a failed follow-up enqueue does not propagate, but is reported', async () => {
+        const error = new Error('redis down')
+        jest.spyOn(App.main.queue, 'enqueue').mockRejectedValue(error)
+        jest.spyOn(logger, 'error').mockImplementation()
+        const notified = jest.spyOn(App.main.error, 'notify')
 
         await expect(notifyJourney('123')).resolves.toBeUndefined()
+
+        expect(notified).toHaveBeenCalledWith(error, { reference_id: '123', entrance_id: 123 })
+    })
+})
+
+describe('loadSendJob', () => {
+    test('a send that has already completed is skipped and logged', async () => {
+        jest.spyOn(User, 'find').mockResolvedValue({ id: 2, project_id: 3 } as any)
+        jest.spyOn(UserEvent, 'find').mockResolvedValue(undefined)
+        jest.spyOn(Project, 'find').mockResolvedValue({ id: 3 } as any)
+        jest.spyOn(CampaignService, 'getCampaignSend').mockResolvedValue({ state: 'sent', hasCompleted: true } as any)
+        const info = jest.spyOn(logger, 'info').mockImplementation()
+
+        const result = await loadSendJob({ campaign_id: 1, user_id: 2, reference_type: 'trigger', reference_id: 'ref-a' })
+
+        expect(result).toBeUndefined()
+        expect(info).toHaveBeenCalledWith(
+            { campaign_id: 1, user_id: 2, reference_id: 'ref-a', state: 'sent' },
+            'send:duplicate_skipped',
+        )
     })
 })
 
