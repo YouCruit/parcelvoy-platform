@@ -58,7 +58,7 @@ export default class CampaignTriggerSendJob extends Job {
 
     // Keyed like the campaign_sends PK (campaign/user/reference), so a
     // reference reused across recipients does not drop the later ones. The
-    // user is hashed to keep the id bounded and external ids out of Redis
+    // user is hashed to keep the id bounded
     static from(data: CampaignTriggerSendParams): CampaignTriggerSendJob {
         const user = crypto.createHash('sha256').update(data.user.external_id).digest('hex').slice(0, 16)
         return new this(data).jobId(`trigger_${data.campaign_id}_${user}_${data.reference_id}`)
