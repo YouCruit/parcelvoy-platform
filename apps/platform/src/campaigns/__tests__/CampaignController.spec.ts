@@ -105,8 +105,7 @@ describe('POST /campaigns/:campaignId/trigger', () => {
 
         const response = await trigger(body(extra))
 
-        expect(response.status).toBeGreaterThanOrEqual(400)
-        expect(response.status).toBeLessThan(500)
+        expect(response.status).toBe(422)
         expect(triggerJobs(spy)).toHaveLength(0)
     })
 

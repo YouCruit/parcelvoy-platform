@@ -26,6 +26,50 @@ describe('RedisQueueProvider', () => {
         expect(logged).toHaveBeenCalledWith(error, 'redis:error:enqueue')
     })
 
+    describe('worker failed handler', () => {
+        // The shared test setup has already loaded the real bullmq into the
+        // module registry, so the provider is re-required against a stub
+        const startWorker = () => {
+            const on = jest.fn()
+            let Provider!: typeof RedisQueueProvider
+            jest.isolateModules(() => {
+                jest.doMock('bullmq', () => ({
+                    ...jest.requireActual('bullmq'),
+                    Worker: jest.fn().mockImplementation(() => ({ on })),
+                }))
+                require('../../app') // same load order as the setup file, which the module cycles depend on
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                Provider = require('../RedisQueueProvider').default
+            })
+            const provider = Object.create(Provider.prototype) as RedisQueueProvider
+            const errored = jest.fn()
+            provider.queue = { errored } as any
+            provider.start()
+            const failed = on.mock.calls.find(([event]) => event === 'failed')![1]
+            return { failed, errored }
+        }
+
+        test('reports the attempts made and allowed', () => {
+            const { failed, errored } = startWorker()
+            const error = new Error('boom')
+            const data = { name: 'test_job' }
+
+            failed({ data, attemptsMade: 2, opts: { attempts: 5 } }, error)
+
+            expect(errored).toHaveBeenCalledWith(error, data, { made: 2, max: 5 })
+        })
+
+        test('treats a job without attempts as a single attempt', () => {
+            const { failed, errored } = startWorker()
+            const error = new Error('boom')
+            const data = { name: 'test_job' }
+
+            failed({ data, attemptsMade: 1, opts: {} }, error)
+
+            expect(errored).toHaveBeenCalledWith(error, data, { made: 1, max: 1 })
+        })
+    })
+
     test('a job\'s own removeOnFail overrides the provider default', async () => {
         const provider = Object.create(RedisQueueProvider.prototype) as RedisQueueProvider
         const add = jest.fn().mockResolvedValue(undefined)
@@ -118,7 +162,7 @@ describe('MemoryQueueProvider', () => {
     })
 
     test('a job re-queued while its dequeue is in flight stays registered', async () => {
-        jest.useFakeTimers({ doNotFake: ['performance'] })
+        jest.useFakeTimers({ doNotFake: ['performance', 'setImmediate'] })
         const job = new TestJob({})
         job.options.jobId = 'sid_1_2_ref-c'
         const dequeue = jest.fn().mockImplementationOnce(async () => {
@@ -130,7 +174,7 @@ describe('MemoryQueueProvider', () => {
         provider.backlog = ['sid_1_2_ref-c']
 
         ;(provider as any).process()
-        for (let i = 0; i < 10; i++) await Promise.resolve()
+        await new Promise(resolve => setImmediate(resolve))
 
         expect(dequeue).toHaveBeenCalledTimes(2)
     })
