@@ -350,6 +350,20 @@ describe('CampaignService', () => {
             expect(second?.options.jobId).toEqual(first?.options.jobId)
         })
 
+        test('concurrent idempotent inserts keep one row', async () => {
+            const campaign = await createTestCampaign(undefined, { type: 'trigger' })
+            const user = await createUser(campaign.project_id)
+            const params = { campaign, user, reference_id: uuid(), reference_type: 'trigger' as const, idempotent: true }
+
+            await Promise.all([triggerCampaignSend(params), triggerCampaignSend(params)])
+
+            const rows = await CampaignSend.all(qb => qb
+                .where('campaign_id', campaign.id)
+                .where('user_id', user.id),
+            )
+            expect(rows).toHaveLength(1)
+        })
+
         test('plain insert still rejects a duplicate reference', async () => {
             const campaign = await createTestCampaign(undefined, { type: 'trigger' })
             const user = await createUser(campaign.project_id)
