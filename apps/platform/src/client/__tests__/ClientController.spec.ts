@@ -109,4 +109,26 @@ describe('POST /events', () => {
         expect(spy).toHaveBeenCalledTimes(2)
         expect(spy.mock.calls[0][0]).toBeInstanceOf(EventPostJob)
     })
+
+    test('rejects the reserved campaign_trigger name', async () => {
+
+        const request = await setup()
+        const spy = jest.spyOn(App.main.queue, 'enqueue')
+        const response = await request('post', '/api/client/events')
+            .send([{ name: 'campaign_trigger', external_id: uuid(), data: {} }])
+        expect(response.status).toBe(422)
+        expect(spy).not.toHaveBeenCalled()
+    })
+})
+
+describe('POST /segment', () => {
+    test('rejects the reserved campaign_trigger event', async () => {
+
+        const request = await setup()
+        const spy = jest.spyOn(App.main.queue, 'enqueue')
+        const response = await request('post', '/api/client/segment')
+            .send([{ type: 'track', event: 'campaign_trigger', userId: uuid(), timestamp: new Date().toISOString() }])
+        expect(response.status).toBe(422)
+        expect(spy).not.toHaveBeenCalled()
+    })
 })

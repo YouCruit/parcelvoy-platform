@@ -181,8 +181,11 @@ const postEventsRequest: JSONSchemaType<ClientPostEventsRequest> = {
         type: 'object',
         required: ['name'],
         properties: {
+            // Reserved for the event a campaign trigger creates, which a
+            // resumed trigger send renders from
             name: {
                 type: 'string',
+                not: { const: 'campaign_trigger' },
             },
             anonymous_id: {
                 type: 'string',

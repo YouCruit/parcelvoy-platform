@@ -21,9 +21,12 @@ const segmentEventsRequest: JSONSchemaType<SegmentPostEventsRequest> = {
         required: ['type'],
         properties: {
             type: { type: 'string' },
+            // Reserved for the event a campaign trigger creates, which a
+            // resumed trigger send renders from
             event: {
                 type: 'string',
                 nullable: true,
+                not: { const: 'campaign_trigger' },
             },
             anonymousId: {
                 type: 'string',

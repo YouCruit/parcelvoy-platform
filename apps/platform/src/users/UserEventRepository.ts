@@ -47,11 +47,14 @@ export const getUserEvents = async (id: number, params: PageParams, projectId: n
 // job stamps `data.campaign.{id,reference_id}`, so a re-queued send can
 // render the original event instead of none. Scoped by campaign because a
 // caller may reuse one reference across campaigns for the same user.
-// Oldest first: the genuine event precedes the send row, while a later
-// match may have been posted by anyone holding the public key
+// The client endpoints reject the name `campaign_trigger`, and BINARY keeps
+// MySQL's case- and accent-insensitive collation from matching a lookalike
+// such as `Campaign_Trigger`. Oldest first: the genuine event precedes the
+// send row
 export const getCampaignTriggerEvent = async (campaignId: number, userId: number, referenceId: string): Promise<UserEvent | undefined> => {
     return await UserEvent.first(qb => qb
         .where('name', 'campaign_trigger')
+        .whereRaw('BINARY name = ?', ['campaign_trigger'])
         .where('user_id', userId)
         .whereRaw('JSON_EXTRACT(data, \'$.campaign.id\') = ?', [campaignId])
         .whereRaw('JSON_UNQUOTE(JSON_EXTRACT(data, \'$.campaign.reference_id\')) = ?', [referenceId])
