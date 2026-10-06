@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { Job } from '../queue'
 import UserDeviceJob from '../users/UserDeviceJob'
 import EventPostJob from '../client/EventPostJob'
@@ -55,8 +56,12 @@ export default class CampaignTriggerSendJob extends Job {
         removeOnFail: true,
     }
 
+    // Keyed like the campaign_sends PK (campaign/user/reference), so a
+    // reference reused across recipients does not drop the later ones. The
+    // user is hashed to keep the id bounded and external ids out of Redis
     static from(data: CampaignTriggerSendParams): CampaignTriggerSendJob {
-        return new this(data).jobId(`trigger_${data.campaign_id}_${data.reference_id}`)
+        const user = crypto.createHash('sha256').update(data.user.external_id).digest('hex').slice(0, 16)
+        return new this(data).jobId(`trigger_${data.campaign_id}_${user}_${data.reference_id}`)
     }
 
     // Jobs queued by an older image carry no reference

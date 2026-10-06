@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import supertest from 'supertest'
 import Api from '../../api'
 import App from '../../app'
@@ -52,6 +53,9 @@ const body = (extra: Record<string, unknown> = {}) => ({
     ...extra,
 })
 
+const userKey = (job: CampaignTriggerSendJob) =>
+    crypto.createHash('sha256').update(job.data.user.external_id).digest('hex').slice(0, 16)
+
 const triggerJobs = (spy: jest.SpyInstance) => spy.mock.calls
     .map(([job]) => job)
     .filter(job => job instanceof CampaignTriggerSendJob)
@@ -69,7 +73,7 @@ describe('POST /campaigns/:campaignId/trigger', () => {
         const jobs = triggerJobs(spy)
         expect(jobs).toHaveLength(1)
         expect(jobs[0].data.reference_id).toEqual('ref-1')
-        expect(jobs[0].options.jobId).toEqual(`trigger_${campaign.id}_ref-1`)
+        expect(jobs[0].options.jobId).toEqual(`trigger_${campaign.id}_${userKey(jobs[0])}_ref-1`)
     })
 
     test('mints a reference when the caller sends none', async () => {
@@ -82,7 +86,7 @@ describe('POST /campaigns/:campaignId/trigger', () => {
         expect(response.status).toBe(200)
         const [job] = triggerJobs(spy)
         expect(job.data.reference_id).toMatch(/^[0-9a-f-]{36}$/)
-        expect(job.options.jobId).toEqual(`trigger_${campaign.id}_${job.data.reference_id}`)
+        expect(job.options.jobId).toEqual(`trigger_${campaign.id}_${userKey(job)}_${job.data.reference_id}`)
         expect(info).toHaveBeenCalledWith(
             { campaign_id: campaign.id, reference_id: job.data.reference_id },
             'campaign:trigger:reference_minted',

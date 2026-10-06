@@ -71,13 +71,23 @@ const loadState = async (campaign: Campaign, external_id: string) => {
 
 describe('CampaignTriggerSendJob', () => {
 
-    test('from() derives the outer job id from the reference', () => {
+    test('from() derives the outer job id from the user and the reference', () => {
         const job = CampaignTriggerSendJob.from({
             project_id: 1, campaign_id: 2, reference_id: 'ref-1', user: { external_id: 'x' }, event: {},
         })
-        expect(job.options.jobId).toEqual('trigger_2_ref-1')
+        // sha256('x'), first 16 hex characters
+        expect(job.options.jobId).toEqual('trigger_2_2d711642b726b044_ref-1')
         expect(job.options.attempts).toEqual(8)
         expect(job.options.removeOnFail).toBe(true)
+    })
+
+    test('from() gives each recipient of a shared reference its own job id', () => {
+        const from = (external_id: string) => CampaignTriggerSendJob.from({
+            project_id: 1, campaign_id: 2, reference_id: 'ref-1', user: { external_id }, event: {},
+        }).options.jobId
+
+        expect(from('a')).not.toEqual(from('b'))
+        expect(from('a')).toEqual(from('a'))
     })
 
     test('first run creates one row, one stamped event and one email job', async () => {
