@@ -204,7 +204,10 @@ const campaignTriggerParams: JSONSchemaType<CampaignTriggerSchema> = {
             additionalProperties: true,
         },
         // Caller idempotency key: repeated triggers with the same value
-        // produce one send (campaign_sends PK is campaign/user/reference)
+        // produce one send (campaign_sends PK is campaign/user/reference).
+        // MySQL compares the PK case-insensitively, but the job id and the
+        // send lock use the exact string: a reference must be reused
+        // byte-for-byte, or concurrent triggers can share a row yet both send
         reference_id: {
             type: 'string',
             minLength: 1,
