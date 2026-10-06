@@ -10,15 +10,6 @@ import { CacheKeys, estimatedSendSize, generateSendList, getCampaign } from './C
 export default class CampaignGenerateListJob extends Job {
     static $name = 'campaign_generate_list_job'
 
-    // A failed job kept under its fixed id would make BullMQ ignore every
-    // later re-queue (the scheduler's tick, abort, reschedule), stranding
-    // the campaign in loading, so drop it once its attempts are used up
-    options: Job['options'] = {
-        delay: 0,
-        attempts: 3,
-        removeOnFail: true,
-    }
-
     static from({ id, project_id }: CampaignJobParams): CampaignGenerateListJob {
         return new this({ id, project_id }).jobId(`cid_${id}_generate`)
     }
@@ -42,21 +33,26 @@ export default class CampaignGenerateListJob extends Job {
         logger.info({ campaignId: id, acquired }, 'campaign:generate:lock')
         if (!acquired) return
 
-        try {
-            // Use approximate size for progress
-            await cacheSet<number>(App.main.redis, CacheKeys.populationTotal(campaign), estimatedSize, 86400)
-            await cacheSet<number>(App.main.redis, CacheKeys.populationProgress(campaign), 0, 86400)
+        // The lock is deliberately not released when a step below throws:
+        // BullMQ's retries then find it held and finish quietly, and the
+        // scheduler's minute tick re-runs a loading campaign only once it
+        // expires, which spaces out retries against a struggling database
+        // (and BullMQ never keeps a failed job under this fixed id, which
+        // would make it ignore every later re-queue). Abort releases it
 
-            logger.info({ campaignId: id }, 'campaign:generate:querying')
-            await generateSendList(campaign)
+        // Use approximate size for progress
+        await cacheSet<number>(App.main.redis, CacheKeys.populationTotal(campaign), estimatedSize, 86400)
+        await cacheSet<number>(App.main.redis, CacheKeys.populationProgress(campaign), 0, 86400)
 
-            logger.info({ campaignId: id }, 'campaign:generate:sending')
-            await CampaignEnqueueSendsJob.from({
-                id: campaign.id,
-                project_id: campaign.project_id,
-            }).queue()
-        } finally {
-            await releaseLock(key)
-        }
+        logger.info({ campaignId: id }, 'campaign:generate:querying')
+        await generateSendList(campaign)
+
+        logger.info({ campaignId: id }, 'campaign:generate:sending')
+        await CampaignEnqueueSendsJob.from({
+            id: campaign.id,
+            project_id: campaign.project_id,
+        }).queue()
+
+        await releaseLock(key)
     }
 }
