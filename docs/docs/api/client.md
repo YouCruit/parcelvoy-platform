@@ -144,7 +144,7 @@ Track and event or interaction.
 #### Body
 An array containing at least one object with the following parameters:
 
-- **name** string (optional) - The name of the event
+- **name** string (optional) - The name of the event. `campaign_trigger` is reserved and rejected
 - **anonymous_id** string
 - **external_id** string
 - **data** object (optional)
