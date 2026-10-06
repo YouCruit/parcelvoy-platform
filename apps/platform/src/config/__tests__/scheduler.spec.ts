@@ -1,6 +1,9 @@
 import nodeScheduler from 'node-schedule'
 import App from '../../app'
 import JourneyDelayJob from '../../journey/JourneyDelayJob'
+import ProcessCampaignsJob from '../../campaigns/ProcessCampaignsJob'
+import CampaignStateJob from '../../campaigns/CampaignStateJob'
+import * as TokenRepository from '../../auth/TokenRepository'
 import { logger } from '../logger'
 import scheduler from '../scheduler'
 
@@ -34,6 +37,26 @@ describe('scheduler', () => {
 
         // enqueueActive plus the two single enqueues on the minute tick
         expect(logged).toHaveBeenCalledTimes(3)
-        expect(logged).toHaveBeenCalledWith(error, 'scheduler:error:enqueue')
+        expect(logged).toHaveBeenCalledWith({ error, job: JourneyDelayJob.$name }, 'scheduler:error:enqueue')
+        expect(logged).toHaveBeenCalledWith({ error, job: ProcessCampaignsJob.$name }, 'scheduler:error:enqueue')
+        expect(logged).toHaveBeenCalledWith({ error, job: CampaignStateJob.$name }, 'scheduler:error:enqueue')
+    })
+
+    test('a failed token cleanup on the hourly tick is logged, not left unhandled', async () => {
+        const ticks: Record<string, () => Promise<void>> = {}
+        jest.spyOn(nodeScheduler, 'scheduleJob').mockImplementation(((rule: string, tick: () => Promise<void>) => {
+            ticks[rule] = tick
+            return {} as nodeScheduler.Job
+        }) as any)
+        const error = new Error('db down')
+        jest.spyOn(App.main.queue, 'enqueue').mockResolvedValue()
+        jest.spyOn(TokenRepository, 'cleanupExpiredRevokedTokens').mockRejectedValue(error)
+        const logged = jest.spyOn(logger, 'error').mockImplementation()
+
+        scheduler(App.main)
+        await ticks['0 * * * *']()
+        await flush()
+
+        expect(logged).toHaveBeenCalledWith(error, 'scheduler:error:token_cleanup')
     })
 })

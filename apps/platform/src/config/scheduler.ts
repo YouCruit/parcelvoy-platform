@@ -16,7 +16,7 @@ import Job from '../queue/Job'
 // Scheduler ticks are fire-and-forget and re-run on the next tick, so a
 // failed enqueue is logged rather than left as an unhandled rejection
 const enqueueSafely = (app: App, job: Job) => {
-    app.queue.enqueue(job).catch(error => logger.error(error, 'scheduler:error:enqueue'))
+    app.queue.enqueue(job).catch(error => logger.error({ error, job: job.name }, 'scheduler:error:enqueue'))
 }
 
 export default (app: App) => {
@@ -24,7 +24,7 @@ export default (app: App) => {
     scheduler.schedule({
         rule: '* * * * *',
         callback: () => {
-            JourneyDelayJob.enqueueActive(app).catch(error => logger.error(error, 'scheduler:error:enqueue'))
+            JourneyDelayJob.enqueueActive(app).catch(error => logger.error({ error, job: JourneyDelayJob.$name }, 'scheduler:error:enqueue'))
             enqueueSafely(app, ProcessCampaignsJob.from())
             enqueueSafely(app, CampaignStateJob.from())
         },
@@ -41,6 +41,7 @@ export default (app: App) => {
         rule: '0 * * * *',
         callback: () => {
             cleanupExpiredRevokedTokens(subDays(new Date(), 1))
+                .catch(error => logger.error(error, 'scheduler:error:token_cleanup'))
             enqueueSafely(app, UserSchemaSyncJob.from({
                 delta: subHours(new Date(), 1),
             }))
