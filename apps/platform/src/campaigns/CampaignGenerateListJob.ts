@@ -10,6 +10,15 @@ import { CacheKeys, estimatedSendSize, generateSendList, getCampaign } from './C
 export default class CampaignGenerateListJob extends Job {
     static $name = 'campaign_generate_list_job'
 
+    // A failed job kept under its fixed id would make BullMQ ignore every
+    // later re-queue (the scheduler's tick, abort, reschedule), stranding
+    // the campaign in loading, so drop it once its attempts are used up
+    options: Job['options'] = {
+        delay: 0,
+        attempts: 3,
+        removeOnFail: true,
+    }
+
     static from({ id, project_id }: CampaignJobParams): CampaignGenerateListJob {
         return new this({ id, project_id }).jobId(`cid_${id}_generate`)
     }
