@@ -33,19 +33,21 @@ export default class CampaignGenerateListJob extends Job {
         logger.info({ campaignId: id, acquired }, 'campaign:generate:lock')
         if (!acquired) return
 
-        // Use approximate size for progress
-        await cacheSet<number>(App.main.redis, CacheKeys.populationTotal(campaign), estimatedSize, 86400)
-        await cacheSet<number>(App.main.redis, CacheKeys.populationProgress(campaign), 0, 86400)
+        try {
+            // Use approximate size for progress
+            await cacheSet<number>(App.main.redis, CacheKeys.populationTotal(campaign), estimatedSize, 86400)
+            await cacheSet<number>(App.main.redis, CacheKeys.populationProgress(campaign), 0, 86400)
 
-        logger.info({ campaignId: id }, 'campaign:generate:querying')
-        await generateSendList(campaign)
+            logger.info({ campaignId: id }, 'campaign:generate:querying')
+            await generateSendList(campaign)
 
-        logger.info({ campaignId: id }, 'campaign:generate:sending')
-        await CampaignEnqueueSendsJob.from({
-            id: campaign.id,
-            project_id: campaign.project_id,
-        }).queue()
-
-        await releaseLock(key)
+            logger.info({ campaignId: id }, 'campaign:generate:sending')
+            await CampaignEnqueueSendsJob.from({
+                id: campaign.id,
+                project_id: campaign.project_id,
+            }).queue()
+        } finally {
+            await releaseLock(key)
+        }
     }
 }
