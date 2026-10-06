@@ -47,12 +47,15 @@ export default class CampaignTriggerSendJob extends Job {
     static $name = 'campaign_trigger_send_job'
 
     // Recovery after a failed inner enqueue relies on BullMQ retrying this job.
-    // Once retries are exhausted the job must not linger in the failed set:
-    // BullMQ silently ignores an add whose id already exists, so a kept
-    // failed job would swallow every later trigger with the same reference
-    options = {
+    // Exponential from 5s, the 8 attempts span about 10.5 minutes (5s+10s+…+320s)
+    // of a database or Redis outage. Once retries are exhausted the job must not
+    // linger in the failed set: BullMQ silently ignores an add whose id already
+    // exists, so a kept failed job would swallow every later trigger with the
+    // same reference
+    options: Job['options'] = {
         delay: 0,
         attempts: 8,
+        backoff: { type: 'exponential', delay: 5000 },
         removeOnFail: true,
     }
 

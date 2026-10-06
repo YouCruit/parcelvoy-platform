@@ -4,7 +4,7 @@ import { createSubscription, subscribe, subscribeAll } from '../../subscriptions
 import { User } from '../../users/User'
 import { uuid } from '../../utilities'
 import Campaign, { CampaignSend, SentCampaign } from '../Campaign'
-import { allCampaigns, createCampaign, getCampaign, generateSendList, estimatedSendSize, updateCampaignSendEnrollment, triggerCampaignSend } from '../CampaignService'
+import { allCampaigns, createCampaign, getCampaign, generateSendList, estimatedSendSize, updateCampaignSendEnrollment, triggerCampaignSend, sendCampaignJob } from '../CampaignService'
 import { createProvider } from '../../providers/ProviderRepository'
 import { createTestProject } from '../../projects/__tests__/ProjectTestHelpers'
 import ListStatsJob from '../../lists/ListStatsJob'
@@ -371,6 +371,20 @@ describe('CampaignService', () => {
 
             await triggerCampaignSend(params)
             await expect(triggerCampaignSend(params)).rejects.toThrow()
+        })
+    })
+
+    describe('sendCampaignJob', () => {
+        const campaign = { id: 1, channel: 'email' } as Campaign
+
+        test('a trigger send is removed once it fails out, so a retried trigger can re-queue it', () => {
+            const job = sendCampaignJob({ campaign, user: 2, reference_type: 'trigger', reference_id: 'ref-1' })
+            expect(job.options.removeOnFail).toBe(true)
+        })
+
+        test('other sends keep the provider default', () => {
+            const job = sendCampaignJob({ campaign, user: 2, reference_type: 'journey', reference_id: '3' })
+            expect(job.options.removeOnFail).toBeUndefined()
         })
     })
 })

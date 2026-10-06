@@ -255,6 +255,11 @@ export const sendCampaignJob = ({ campaign, user, event, reference_type, referen
     const job = channels[campaign.channel]
     job.jobId(`sid_${campaign.id}_${body.user_id}_${body.reference_id}`)
 
+    // A retried trigger re-queues this job under the same id to resume a
+    // stuck send. BullMQ ignores an add whose id is still in the failed set,
+    // so an exhausted trigger send must not linger there
+    if (reference_type === 'trigger') job.options.removeOnFail = true
+
     return job
 }
 

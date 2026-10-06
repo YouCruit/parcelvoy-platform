@@ -78,6 +78,7 @@ describe('CampaignTriggerSendJob', () => {
         // sha256('x'), first 16 hex characters
         expect(job.options.jobId).toEqual('trigger_2_2d711642b726b044_ref-1')
         expect(job.options.attempts).toEqual(8)
+        expect(job.options.backoff).toEqual({ type: 'exponential', delay: 5000 })
         expect(job.options.removeOnFail).toBe(true)
     })
 
@@ -105,6 +106,7 @@ describe('CampaignTriggerSendJob', () => {
         expect(events[0].data).toMatchObject({ token: 'abc', campaign: { id: campaign.id, reference_id } })
         expect(emails).toHaveLength(1)
         expect(emails[0].options.jobId).toEqual(`sid_${campaign.id}_${user.id}_${reference_id}`)
+        expect(emails[0].options.removeOnFail).toBe(true)
         expect(emails[0].data.event_id).toEqual(events[0].id)
     })
 
@@ -140,6 +142,7 @@ describe('CampaignTriggerSendJob', () => {
         expect(after.events).toHaveLength(1)
         expect(emails).toHaveLength(1)
         expect(emails[0].options.jobId).toEqual(`sid_${campaign.id}_${before.user.id}_${reference_id}`)
+        expect(emails[0].options.removeOnFail).toBe(true)
         expect(emails[0].data.event_id).toEqual(before.events[0].id)
     })
 
