@@ -51,8 +51,13 @@ export default class RedisQueueProvider implements QueueProvider {
     }
 
     async enqueueBatch(jobs: EncodedJob[]): Promise<void> {
-        for (const part of batch(jobs, this.batchSize)) {
-            await this.bull.addBulk(part.map(item => this.adaptJob(item)))
+        try {
+            for (const part of batch(jobs, this.batchSize)) {
+                await this.bull.addBulk(part.map(item => this.adaptJob(item)))
+            }
+        } catch (error) {
+            logger.error(error, 'redis:error:enqueue')
+            throw error
         }
     }
 
@@ -109,8 +114,13 @@ export default class RedisQueueProvider implements QueueProvider {
             },
         })
 
+        // Emitted after every failed attempt, including ones BullMQ will
+        // retry; attemptsMade already counts the attempt that just failed
         this.worker.on('failed', (job, error) => {
-            this.queue.errored(error, job?.data as EncodedJob)
+            this.queue.errored(error, job?.data as EncodedJob, job && {
+                made: job.attemptsMade,
+                max: job.opts.attempts ?? 1,
+            })
         })
 
         this.worker.on('error', error => {

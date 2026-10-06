@@ -2,6 +2,8 @@ import MemoryQueueProvider from '../MemoryQueueProvider'
 import RedisQueueProvider from '../RedisQueueProvider'
 import SQSQueueProvider from '../SQSQueueProvider'
 import Job from '../Job'
+import Queue from '../Queue'
+import App from '../../app'
 import { logger } from '../../config/logger'
 
 afterEach(() => {
@@ -36,6 +38,28 @@ describe('RedisQueueProvider', () => {
         expect(add.mock.calls[0][2].removeOnFail).toBe(true)
     })
 
+    test('enqueueBatch rethrows and logs when bull.addBulk fails', async () => {
+        const provider = Object.create(RedisQueueProvider.prototype) as RedisQueueProvider
+        const error = new Error('redis down')
+        provider.bull = { addBulk: jest.fn().mockRejectedValue(error) } as any
+        const logged = jest.spyOn(logger, 'error').mockImplementation()
+
+        await expect(provider.enqueueBatch([new TestJob({})])).rejects.toBe(error)
+        expect(logged).toHaveBeenCalledWith(error, 'redis:error:enqueue')
+    })
+
+    test('a job\'s own backoff reaches bull.add', async () => {
+        const provider = Object.create(RedisQueueProvider.prototype) as RedisQueueProvider
+        const add = jest.fn().mockResolvedValue(undefined)
+        provider.bull = { add } as any
+        const job = new TestJob({})
+        job.options.backoff = { type: 'exponential', delay: 5000 }
+
+        await provider.enqueue(job)
+
+        expect(add.mock.calls[0][2].backoff).toEqual({ type: 'exponential', delay: 5000 })
+    })
+
     test('jobs without removeOnFail keep the provider default', async () => {
         const provider = Object.create(RedisQueueProvider.prototype) as RedisQueueProvider
         const add = jest.fn().mockResolvedValue(undefined)
@@ -44,6 +68,32 @@ describe('RedisQueueProvider', () => {
         await provider.enqueue(new TestJob({}))
 
         expect(add.mock.calls[0][2].removeOnFail).toEqual({ count: 50, age: 24 * 3600 })
+    })
+})
+
+describe('Queue.errored', () => {
+    const queue = Object.create(Queue.prototype) as Queue
+    const job = new TestJob({}).toJSON() as any
+
+    test('a failed attempt that will be retried is not marked exhausted', async () => {
+        const logged = jest.spyOn(logger, 'error').mockImplementation()
+        const notified = jest.spyOn(App.main.error, 'notify').mockImplementation()
+        const error = new Error('boom')
+
+        await queue.errored(error, job, { made: 1, max: 3 })
+
+        expect(logged).toHaveBeenCalledWith(expect.objectContaining({ attempts: { made: 1, max: 3 } }), 'queue:job:errored')
+        expect(logged).not.toHaveBeenCalledWith(expect.anything(), 'queue:job:exhausted')
+        expect(notified).toHaveBeenCalledWith(error, { ...job, attempts: { made: 1, max: 3 } })
+    })
+
+    test('the last failed attempt is marked exhausted', async () => {
+        const logged = jest.spyOn(logger, 'error').mockImplementation()
+        jest.spyOn(App.main.error, 'notify').mockImplementation()
+
+        await queue.errored(new Error('boom'), job, { made: 3, max: 3 })
+
+        expect(logged).toHaveBeenCalledWith({ job, attempts: { made: 3, max: 3 } }, 'queue:job:exhausted')
     })
 })
 

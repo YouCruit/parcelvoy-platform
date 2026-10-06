@@ -57,6 +57,10 @@ export default class MemoryQueueProvider implements QueueProvider {
         let jobId = this.backlog.shift()
         while (jobId) {
 
+            // Removed before it runs, so an in-flight job can be added again
+            // (and delayed) under its own id. BullMQ instead ignores an add
+            // whose id is still active, so dedupe of a job re-queued while
+            // it runs (e.g. a resumed trigger send) is not exercised here
             const job = this.jobs[jobId]
             delete this.jobs[jobId]
             if (job) await this.queue.dequeue(job)

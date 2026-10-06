@@ -2,7 +2,7 @@ import App from '../app'
 import { DriverConfig } from '../config/env'
 import { logger } from '../config/logger'
 import { LoggerConfig } from '../providers/LoggerProvider'
-import Job, { EncodedJob, JobError } from './Job'
+import Job, { EncodedJob, JobAttempts, JobError } from './Job'
 import MemoryQueueProvider, { MemoryConfig } from './MemoryQueueProvider'
 import QueueProvider, { MetricPeriod, QueueMetric, QueueProviderName } from './QueueProvider'
 import RedisQueueProvider, { RedisQueueConfig } from './RedisQueueProvider'
@@ -75,10 +75,16 @@ export default class Queue {
         logger.trace(job, 'queue:job:started')
     }
 
-    async errored(error: Error, job?: EncodedJob) {
+    async errored(error: Error, job?: EncodedJob, attempts?: JobAttempts) {
         if (error instanceof JobError) return
-        logger.error({ error, stacktrace: error.stack, job }, 'queue:job:errored')
-        App.main.error.notify(error, job)
+        logger.error({ error, stacktrace: error.stack, job, attempts }, 'queue:job:errored')
+
+        // Every failed attempt lands here; mark the one after which the job
+        // will not run again, so a dropped job is told apart from a retry
+        if (attempts && attempts.made >= attempts.max) {
+            logger.error({ job, attempts }, 'queue:job:exhausted')
+        }
+        App.main.error.notify(error, attempts ? { ...job, attempts } : job)
     }
 
     async completed(job: EncodedJob, duration: number) {
