@@ -56,9 +56,12 @@ describe('MemoryQueueProvider', () => {
 
         await provider.delay(job, 3000)
         expect(provider.backlog).toEqual([])
+        expect(provider.timers.size).toBe(1)
 
         jest.advanceTimersByTime(3000)
         await Promise.resolve()
+
+        expect(provider.timers.size).toBe(0)
 
         expect(provider.backlog).toEqual(['sid_1_2_ref-a'])
         expect(provider.jobs['sid_1_2_ref-a']).toBe(job)
