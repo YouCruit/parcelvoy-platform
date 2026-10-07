@@ -4,7 +4,7 @@ import { createSubscription, subscribe, subscribeAll } from '../../subscriptions
 import { User } from '../../users/User'
 import { uuid } from '../../utilities'
 import Campaign, { CampaignSend, SentCampaign } from '../Campaign'
-import { allCampaigns, createCampaign, getCampaign, generateSendList, estimatedSendSize, updateCampaignSendEnrollment } from '../CampaignService'
+import { allCampaigns, createCampaign, getCampaign, generateSendList, estimatedSendSize, updateCampaignSendEnrollment, triggerCampaignSend, sendCampaignJob } from '../CampaignService'
 import { createProvider } from '../../providers/ProviderRepository'
 import { createTestProject } from '../../projects/__tests__/ProjectTestHelpers'
 import ListStatsJob from '../../lists/ListStatsJob'
@@ -327,6 +327,64 @@ describe('CampaignService', () => {
             const updated = await CampaignSend.first(qb => qb.where('campaign_id', campaign.id).where('user_id', user.id))
 
             expect(updated).toBeUndefined()
+        })
+    })
+
+    describe('triggerCampaignSend', () => {
+        test('idempotent insert keeps one row and returns the same job id', async () => {
+            const campaign = await createTestCampaign(undefined, { type: 'trigger' })
+            const user = await createUser(campaign.project_id)
+            const reference_id = uuid()
+            const params = { campaign, user, reference_id, reference_type: 'trigger' as const, idempotent: true }
+
+            const first = await triggerCampaignSend(params)
+            const second = await triggerCampaignSend(params)
+
+            const rows = await CampaignSend.all(qb => qb
+                .where('campaign_id', campaign.id)
+                .where('user_id', user.id),
+            )
+            expect(rows).toHaveLength(1)
+            expect(rows[0].reference_id).toEqual(reference_id)
+            expect(first?.options.jobId).toEqual(`sid_${campaign.id}_${user.id}_${reference_id}`)
+            expect(second?.options.jobId).toEqual(first?.options.jobId)
+        })
+
+        test('concurrent idempotent inserts keep one row', async () => {
+            const campaign = await createTestCampaign(undefined, { type: 'trigger' })
+            const user = await createUser(campaign.project_id)
+            const params = { campaign, user, reference_id: uuid(), reference_type: 'trigger' as const, idempotent: true }
+
+            await Promise.all([triggerCampaignSend(params), triggerCampaignSend(params)])
+
+            const rows = await CampaignSend.all(qb => qb
+                .where('campaign_id', campaign.id)
+                .where('user_id', user.id),
+            )
+            expect(rows).toHaveLength(1)
+        })
+
+        test('plain insert still rejects a duplicate reference', async () => {
+            const campaign = await createTestCampaign(undefined, { type: 'trigger' })
+            const user = await createUser(campaign.project_id)
+            const params = { campaign, user, reference_id: uuid(), reference_type: 'trigger' as const }
+
+            await triggerCampaignSend(params)
+            await expect(triggerCampaignSend(params)).rejects.toThrow()
+        })
+    })
+
+    describe('sendCampaignJob', () => {
+        const campaign = { id: 1, channel: 'email' } as Campaign
+
+        test('a trigger send is removed once it fails out, so a retried trigger can re-queue it', () => {
+            const job = sendCampaignJob({ campaign, user: 2, reference_type: 'trigger', reference_id: 'ref-1' })
+            expect(job.options.removeOnFail).toBe(true)
+        })
+
+        test('other sends keep the provider default', () => {
+            const job = sendCampaignJob({ campaign, user: 2, reference_type: 'journey', reference_id: '3' })
+            expect(job.options.removeOnFail).toBeUndefined()
         })
     })
 })

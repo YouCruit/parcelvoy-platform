@@ -41,7 +41,7 @@ export default class WebhookJob extends Job {
         } catch (error: any) {
             await failSend(data, error)
         } finally {
-            await releaseLock(messageLock(campaign, user))
+            await releaseLock(messageLock(data))
         }
     }
 }

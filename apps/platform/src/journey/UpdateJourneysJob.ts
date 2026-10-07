@@ -12,7 +12,7 @@ export default class UpdateJourneysJob extends Job {
         const { db, queue } = App.main
 
         await chunk<Journey>(Journey.query(db), queue.batchSize, async journeys => {
-            queue.enqueueBatch(journeys.map(({ id }) => JourneyStatsJob.from(id)))
+            await queue.enqueueBatch(journeys.map(({ id }) => JourneyStatsJob.from(id)))
         })
     }
 }

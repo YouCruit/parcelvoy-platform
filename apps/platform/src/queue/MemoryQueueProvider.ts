@@ -12,6 +12,7 @@ export default class MemoryQueueProvider implements QueueProvider {
     jobs: Record<string, Job> = {}
     backlog: string[] = []
     loop: NodeJS.Timeout | undefined
+    timers = new Set<NodeJS.Timeout>()
     batchSize = 1000 as const
 
     constructor(queue: Queue) {
@@ -32,7 +33,11 @@ export default class MemoryQueueProvider implements QueueProvider {
 
     async delay(job: Job, milliseconds: number): Promise<void> {
         job.options.delay = milliseconds
-        await this.enqueue(job)
+        const timer = setTimeout(() => {
+            this.timers.delete(timer)
+            this.enqueue(job)
+        }, milliseconds)
+        this.timers.add(timer)
     }
 
     start(): void {
@@ -44,18 +49,21 @@ export default class MemoryQueueProvider implements QueueProvider {
     close(): void {
         clearTimeout(this.loop)
         this.loop = undefined
+        for (const timer of this.timers) clearTimeout(timer)
+        this.timers.clear()
     }
 
     private async process() {
         let jobId = this.backlog.shift()
         while (jobId) {
 
-            // If we have a jobId fetch job and dequeue
-            if (jobId) {
-                const job = this.jobs[jobId]
-                if (job) await this.queue.dequeue(job)
-                delete this.jobs[jobId]
-            }
+            // Removed before it runs, so an in-flight job can be added again
+            // (and delayed) under its own id. BullMQ instead ignores an add
+            // whose id is still active, so dedupe of a job re-queued while
+            // it runs (e.g. a resumed trigger send) is not exercised here
+            const job = this.jobs[jobId]
+            delete this.jobs[jobId]
+            if (job) await this.queue.dequeue(job)
 
             jobId = this.backlog.shift()
         }

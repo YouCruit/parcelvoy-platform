@@ -2,6 +2,7 @@ import { JourneyUserStep } from '../journey/JourneyStep'
 import App from '../app'
 import Campaign from '../campaigns/Campaign'
 import { getCampaignSend, updateSendState } from '../campaigns/CampaignService'
+import { logger } from '../config/logger'
 import { Channel } from '../config/channels'
 import { RateLimitResponse } from '../config/rateLimit'
 import { acquireLock } from '../core/Lock'
@@ -41,8 +42,12 @@ export async function loadSendJob<T extends TemplateType>({ campaign_id, user_id
     if (!user || !project) return
 
     // If there is a send and it's in an aborted state or has already
-    // sent, abort this job to prevent duplicate sends
-    if (send && send.hasCompleted) return
+    // sent, abort this job to prevent duplicate sends. This is also where a
+    // send re-queued on a held lock stops once the other run has finished
+    if (send && send.hasCompleted) {
+        logger.info({ campaign_id, user_id, reference_id, state: send.state }, 'send:duplicate_skipped')
+        return
+    }
 
     // Fetch campaign
     const campaign = await Campaign.find(campaign_id)
@@ -117,7 +122,10 @@ export async function loadSendJob<T extends TemplateType>({ campaign_id, user_id
     return response
 }
 
-export const messageLock = (campaign: Campaign, user: User) => `parcelvoy:send:${campaign.id}:${user.id}`
+// Keyed per send, not per user: one user can have several trigger sends in
+// flight at once, and they must not block each other
+export const messageLock = ({ campaign, user, context }: Pick<MessageTriggerHydrated<unknown>, 'campaign' | 'user' | 'context'>) =>
+    `parcelvoy:send:${campaign.id}:${user.id}:${context.reference_id}`
 
 export const prepareSend = async <T>(
     channel: Channel,
@@ -148,8 +156,24 @@ export const prepareSend = async <T>(
     }
 
     // Create a lock for this process to make sure it doesn't run twice
-    const acquired = await acquireLock({ key: messageLock(campaign, user) })
-    if (!acquired) return false
+    const acquired = await acquireLock({ key: messageLock(message) })
+    if (!acquired) {
+
+        // Returning here would complete the job and leave the send pending
+        // forever, so retry it: once the other run finishes, hasCompleted
+        // stops the retry. Delivery is at-least-once: a worker killed after
+        // the provider accepted the message but before finalizeSend leaves
+        // the row pending, so the stalled job's retry sends a second copy
+        const delay = 1000 + randomInt(0, 5000)
+        logger.info({
+            campaign_id: campaign.id,
+            user_id: user.id,
+            reference_id: message.context.reference_id,
+            delay,
+        }, 'send:locked')
+        await App.main.queue.delay(raw, delay)
+        return false
+    }
 
     return true
 }
@@ -232,5 +256,12 @@ export const notifyJourney = async (reference_id: string, response?: any) => {
     }
 
     // Trigger processing of this journey entrance
-    await JourneyProcessJob.from({ entrance_id: referenceId }).queue()
+    // The message was already delivered, so a failed follow-up must not mark the send failed
+    try {
+        await JourneyProcessJob.from({ entrance_id: referenceId }).queue()
+    } catch (error) {
+        // Nothing re-processes an entrance whose follow-up was never queued
+        logger.error({ error, reference_id, entrance_id: referenceId }, 'journey:error:notify_enqueue')
+        App.main.error.notify(error as Error, { reference_id, entrance_id: referenceId })
+    }
 }

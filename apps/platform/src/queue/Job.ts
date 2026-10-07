@@ -4,10 +4,20 @@ interface JobOptions {
     delay?: number // Milliseconds
     attempts?: number
     jobId?: string
+    removeOnFail?: boolean | { count?: number, age?: number }
+    backoff?: { type: 'exponential' | 'fixed', delay: number } // Milliseconds
 }
 
 interface JobState {
     attemptsMade: number
+}
+
+// How many times a failed job has run, out of how many it may, and
+// whether it has stopped for good (no retry will follow)
+export interface JobAttempts {
+    made: number
+    max: number
+    exhausted: boolean
 }
 
 export interface EncodedJob {

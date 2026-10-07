@@ -10,22 +10,30 @@ import UserSchemaSyncJob from '../schema/UserSchemaSyncJob'
 import UpdateJourneysJob from '../journey/UpdateJourneysJob'
 import ScheduledEntranceOrchestratorJob from '../journey/ScheduledEntranceOrchestratorJob'
 import { acquireLock } from '../core/Lock'
+import { logger } from './logger'
+import Job from '../queue/Job'
+
+// Scheduler ticks are fire-and-forget and re-run on the next tick, so a
+// failed enqueue is logged rather than left as an unhandled rejection
+const enqueueSafely = (app: App, job: Job) => {
+    app.queue.enqueue(job).catch(error => logger.error({ error, job: job.name }, 'scheduler:error:enqueue'))
+}
 
 export default (app: App) => {
     const scheduler = new Scheduler(app)
     scheduler.schedule({
         rule: '* * * * *',
         callback: () => {
-            JourneyDelayJob.enqueueActive(app)
-            app.queue.enqueue(ProcessCampaignsJob.from())
-            app.queue.enqueue(CampaignStateJob.from())
+            JourneyDelayJob.enqueueActive(app).catch(error => logger.error({ error, job: JourneyDelayJob.$name }, 'scheduler:error:enqueue'))
+            enqueueSafely(app, ProcessCampaignsJob.from())
+            enqueueSafely(app, CampaignStateJob.from())
         },
         lockLength: 120,
     })
     scheduler.schedule({
         rule: '*/5 * * * *',
         callback: () => {
-            app.queue.enqueue(ProcessListsJob.from())
+            enqueueSafely(app, ProcessListsJob.from())
         },
         lockLength: 360,
     })
@@ -33,11 +41,12 @@ export default (app: App) => {
         rule: '0 * * * *',
         callback: () => {
             cleanupExpiredRevokedTokens(subDays(new Date(), 1))
-            app.queue.enqueue(UserSchemaSyncJob.from({
+                .catch(error => logger.error(error, 'scheduler:error:token_cleanup'))
+            enqueueSafely(app, UserSchemaSyncJob.from({
                 delta: subHours(new Date(), 1),
             }))
-            app.queue.enqueue(UpdateJourneysJob.from())
-            app.queue.enqueue(ScheduledEntranceOrchestratorJob.from())
+            enqueueSafely(app, UpdateJourneysJob.from())
+            enqueueSafely(app, ScheduledEntranceOrchestratorJob.from())
         },
     })
     return scheduler

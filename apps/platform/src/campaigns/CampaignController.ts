@@ -3,11 +3,14 @@ import { JSONSchemaType, validate } from '../core/validate'
 import Campaign, { CampaignCreateParams, CampaignUpdateParams } from './Campaign'
 import { archiveCampaign, campaignPreview, createCampaign, deleteCampaign, duplicateCampaign, getCampaign, getCampaignUsers, pagedCampaigns, updateCampaign } from './CampaignService'
 import { searchParamsSchema, SearchSchema } from '../core/searchParams'
-import { extractQueryParams } from '../utilities'
+import { extractQueryParams, uuid } from '../utilities'
 import { ProjectState } from '../auth/AuthMiddleware'
 import { projectRoleMiddleware } from '../projects/ProjectService'
 import { Context, Next } from 'koa'
 import CampaignTriggerSendJob, { CampaignTriggerSendParams } from './CampaignTriggerSendJob'
+import { RequestError } from '../core/errors'
+import { logger } from '../config/logger'
+import App from '../app'
 
 const router = new Router<ProjectState & { campaign?: Campaign }>({
     prefix: '/campaigns',
@@ -175,7 +178,9 @@ router.get('/:campaignId/preview', async ctx => {
     ctx.body = await campaignPreview(ctx.state.project, ctx.state.campaign!)
 })
 
-type CampaignTriggerSchema = Omit<CampaignTriggerSendParams, 'project_id' | 'campaign_id'>
+type CampaignTriggerSchema = Omit<CampaignTriggerSendParams, 'project_id' | 'campaign_id' | 'reference_id'> & {
+    reference_id?: string
+}
 
 const campaignTriggerParams: JSONSchemaType<CampaignTriggerSchema> = {
     $id: 'campaignTrigger',
@@ -199,19 +204,50 @@ const campaignTriggerParams: JSONSchemaType<CampaignTriggerSchema> = {
             type: 'object',
             additionalProperties: true,
         },
+        // Caller idempotency key: repeated triggers with the same value
+        // produce one send (campaign_sends PK is campaign/user/reference).
+        // MySQL compares the PK case-insensitively, but the job id and the
+        // send lock use the exact string: a reference must be reused
+        // byte-for-byte, or concurrent triggers can share a row yet both send.
+        // Not all digits: journey sends key their rows on the numeric step id
+        // under the same PK. No colons: the reference ends up in the BullMQ
+        // job id, and BullMQ builds its Redis keys from the id with colons
+        reference_id: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 255,
+            pattern: '^(?=.*[^0-9])[A-Za-z0-9_.-]+$',
+            nullable: true,
+        },
     },
     additionalProperties: false,
 }
 
 router.post('/:campaignId/trigger', async ctx => {
     const project = ctx.state.project
-    const payload = validate(campaignTriggerParams, ctx.request.body)
+    const { reference_id, ...payload } = validate(campaignTriggerParams, ctx.request.body)
+    const campaign_id = ctx.state.campaign!.id
 
-    await CampaignTriggerSendJob.from({
-        ...payload,
-        project_id: project.id,
-        campaign_id: ctx.state.campaign!.id,
-    }).queue()
+    // Minted here rather than in the job so a retried job keeps its reference
+    const reference = reference_id ?? uuid()
+    if (!reference_id) {
+        logger.info({ campaign_id, reference_id: reference }, 'campaign:trigger:reference_minted')
+    }
+
+    try {
+        await CampaignTriggerSendJob.from({
+            ...payload,
+            reference_id: reference,
+            project_id: project.id,
+            campaign_id,
+        }).queue()
+    } catch (error) {
+        // api.ts maps unknown errors to 400, which callers treat as permanent.
+        // It does not report a RequestError either, so notify here
+        logger.error({ error, campaign_id, reference_id: reference }, 'campaign:trigger:enqueue_failed')
+        App.main.error.notify(error as Error, { campaign_id, reference_id: reference })
+        throw new RequestError('Unable to queue trigger', 503)
+    }
 
     ctx.body = { success: true }
 })

@@ -188,7 +188,7 @@ subrouter.get('/data/paths', async ctx => {
 })
 
 subrouter.post('/data/paths/sync', async ctx => {
-    App.main.queue.enqueue(UserSchemaSyncJob.from({
+    await App.main.queue.enqueue(UserSchemaSyncJob.from({
         project_id: ctx.state.project.id,
         // no delta, rebuild the whole thing
     }))

@@ -22,6 +22,13 @@ To authenticate requests, set the `Authorization` header to be `Bearer YOUR_KEY`
 
 ## Campaigns
 
+### Retrying a trigger
+A trigger is safe to retry when it carries a `reference_id`. Repeated triggers with the same `reference_id` for the same campaign and user produce one send: a send that has already gone out is skipped, and one still waiting is queued again. Reuse the value byte-for-byte.
+
+The `reference_id` is sent to the recipient in the email's `X-Reference-Id` header, so use an opaque token rather than an internal identifier.
+
+A `reference_id` is 1–255 characters of letters, digits, `_`, `.` and `-`, and must not be all digits. Without one, every trigger is a new send.
+
 ### Sending Email
 Trigger an email to be sent to a given user via API.
 
@@ -34,12 +41,14 @@ Trigger an email to be sent to a given user via API.
     - **email** string
     - **timezone** string (optional)
     - **locale** string (optional)
-- **event** object (optional)
+- **event** object (required, may be `{}`)
+- **reference_id** string (optional) - see [Retrying a trigger](#retrying-a-trigger)
 
 
 #### Responses
-- **204** - Success
+- **200** - Success, `{ "success": true }`
 - **422** - Validation error
+- **503** - The trigger could not be queued; retry it with the same `reference_id`
 
 #### Example
 ```json
@@ -76,12 +85,14 @@ Trigger an SMS text message to be sent to a given user via API.
     - **phone** string
     - **timezone** string (optional)
     - **locale** string (optional)
-- **event** object (optional)
+- **event** object (required, may be `{}`)
+- **reference_id** string (optional) - see [Retrying a trigger](#retrying-a-trigger)
 
 
 #### Responses
-- **204** - Success
+- **200** - Success, `{ "success": true }`
 - **422** - Validation error
+- **503** - The trigger could not be queued; retry it with the same `reference_id`
 
 #### Example
 ```json
@@ -118,12 +129,14 @@ Trigger an push notification to be sent to a given user via API.
     - **device_token** string
     - **timezone** string (optional)
     - **locale** string (optional)
-- **event** object (optional)
+- **event** object (required, may be `{}`)
+- **reference_id** string (optional) - see [Retrying a trigger](#retrying-a-trigger)
 
 
 #### Responses
-- **204** - Success
+- **200** - Success, `{ "success": true }`
 - **422** - Validation error
+- **503** - The trigger could not be queued; retry it with the same `reference_id`
 
 #### Example
 ```json

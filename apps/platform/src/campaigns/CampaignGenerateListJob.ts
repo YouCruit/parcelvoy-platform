@@ -33,6 +33,13 @@ export default class CampaignGenerateListJob extends Job {
         logger.info({ campaignId: id, acquired }, 'campaign:generate:lock')
         if (!acquired) return
 
+        // The lock is deliberately not released when a step below throws:
+        // BullMQ's retries then find it held and finish quietly, and the
+        // scheduler's minute tick re-runs a loading campaign only once it
+        // expires, which spaces out retries against a struggling database
+        // (and BullMQ never keeps a failed job under this fixed id, which
+        // would make it ignore every later re-queue). Abort releases it
+
         // Use approximate size for progress
         await cacheSet<number>(App.main.redis, CacheKeys.populationTotal(campaign), estimatedSize, 86400)
         await cacheSet<number>(App.main.redis, CacheKeys.populationProgress(campaign), 0, 86400)
